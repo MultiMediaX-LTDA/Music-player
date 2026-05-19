@@ -13,13 +13,13 @@ import java.io.File
 /**
  * Escaneia o celular e encontra todos os arquivos de midia.
  * Classifica cada um como "nativo" ou "precisa de FFmpeg".
- * AGORA TAMBEM escaneia pastas ocultas (dotfiles).
+ * AGORA escaneia TODAS as pastas (incluindo .Music e outras ocultas).
  */
 class MediaScanner(private val context: Context) {
 
     companion object {
         private const val TAG = "JammerScanner"
-        
+
         // Extensoes de audio e video que o Jammer reconhece
         private val AUDIO_EXTS = setOf(
             "mp3", "flac", "ogg", "opus", "aac", "m4a", "wav", 
@@ -30,12 +30,12 @@ class MediaScanner(private val context: Context) {
             "avi", "wmv", "flv", "mpeg", "mpg", "bik"
         )
         private val ALL_EXTS = AUDIO_EXTS + VIDEO_EXTS
-        
-        // Pastas do sistema pra ignorar (nao sao dotfiles de musica)
+
+        // Pastas do sistema pra ignorar (nao sao de musica)
         private val SYSTEM_FOLDERS = setOf(
             "Android", "DCIM", "Documents", "Download", "Movies", 
-            "Music", "Notifications", "Pictures", "Podcasts", "Ringtones",
-            "alarms", "media", "MIUI", "Samsung"
+            "Notifications", "Pictures", "Podcasts", "Ringtones",
+            "alarms", "media", "MIUI", "Samsung", "cache", "tmp", "temp"
         )
     }
 
@@ -55,7 +55,7 @@ class MediaScanner(private val context: Context) {
     suspend fun scanAll(): List<Track> = withContext(Dispatchers.IO) {
         val tracks = mutableListOf<Track>()
         tracks.addAll(scanMediaStore())
-        tracks.addAll(scanHiddenFolders())
+        tracks.addAll(scanAllFolders())
         val unique = tracks.distinctBy { it.path }
         Log.i(TAG, "Total scanned: ${unique.size} files (${tracks.size - unique.size} duplicados removidos)")
         unique
@@ -112,17 +112,22 @@ class MediaScanner(private val context: Context) {
         return result
     }
 
-    private fun scanHiddenFolders(): List<Track> {
+    /**
+     * Scaneia TODAS as pastas do usuario (incluindo .Music e outras ocultas).
+     * MediaStore nao indexa pastas ocultas, entao fazemos manualmente.
+     */
+    private fun scanAllFolders(): List<Track> {
         val result = mutableListOf<Track>()
         val root = Environment.getExternalStorageDirectory() ?: File("/storage/emulated/0")
-        
-        Log.i(TAG, "Scanning hidden folders in: ${root.absolutePath}")
-        val hiddenDirs = findHiddenDirectories(root)
-        Log.i(TAG, "Found ${hiddenDirs.size} hidden directories")
+
+        Log.i(TAG, "Scanning ALL folders in: ${root.absolutePath}")
+        val allDirs = findAllDirectories(root)
+        Log.i(TAG, "Found ${allDirs.size} directories to scan")
 
         var nextId = -1L
+        var trackCount = 0
 
-        for (dir in hiddenDirs) {
+        for (dir in allDirs) {
             val files = dir.listFiles() ?: continue
             for (file in files) {
                 if (!file.isFile) continue
@@ -143,18 +148,23 @@ class MediaScanner(private val context: Context) {
                         extension = ext,
                         isNative = formatInfo?.isNative ?: false,
                         needsFFmpeg = formatInfo?.needsFFmpeg ?: false,
-                        isFromHiddenFolder = true
+                        isFromHiddenFolder = dir.name.startsWith(".")
                     )
                 )
+                trackCount++
             }
         }
 
-        Log.i(TAG, "Found ${result.size} tracks in hidden folders")
+        Log.i(TAG, "Found $trackCount tracks in all folders")
         return result
     }
 
-    private fun findHiddenDirectories(root: File): List<File> {
-        val hidden = mutableListOf<File>()
+    /**
+     * Encontra TODAS as pastas do usuario (nao so as ocultas).
+     * Ignora pastas do sistema e pastas de apps.
+     */
+    private fun findAllDirectories(root: File): List<File> {
+        val all = mutableListOf<File>()
         val stack = ArrayDeque<File>()
         stack.add(root)
 
@@ -164,24 +174,27 @@ class MediaScanner(private val context: Context) {
 
             for (child in children) {
                 if (!child.isDirectory) continue
-                if (child.name in SYSTEM_FOLDERS) continue
-                
-                if (child.name.startsWith(".")) {
-                    hidden.add(child)
-                    stack.add(child)
-                } else {
-                    stack.add(child)
-                }
+                val name = child.name
+
+                // Ignora pastas do sistema
+                if (name in SYSTEM_FOLDERS) continue
+                // Ignora pastas de apps
+                if (name.startsWith(".") && name.length > 1 && !name.matches(Regex("^\.[A-Za-z].*"))) continue
+                // Ignora cache e dados de apps
+                if (name == "cache" || name == "files" || name == "databases") continue
+
+                all.add(child)
+                stack.add(child)
             }
         }
 
-        return hidden
+        return all
     }
 
     private fun parseFilename(filename: String): Triple<String, String, String> {
-        var clean = filename.replace(Regex("^\\d+[.\\s-]+"), "")
+        var clean = filename.replace(Regex("^\d+[.\s-]+"), "")
         val parts = clean.split(" - ", limit = 3)
-        
+
         return when (parts.size) {
             3 -> Triple(parts[2], parts[0], parts[1])
             2 -> Triple(parts[1], parts[0], "Unknown Album")
