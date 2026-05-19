@@ -179,7 +179,7 @@ class MediaScanner(private val context: Context) {
                 // Ignora pastas do sistema
                 if (name in SYSTEM_FOLDERS) continue
                 // Ignora pastas de apps
-                if (name.startsWith(".") && name.length > 1 && !name.matches(Regex("^\.[A-Za-z].*"))) continue
+                if (name.startsWith(".") && name.length > 1 && !name.matches(Regex("""^\.[A-Za-z].*"""))) continue
                 // Ignora cache e dados de apps
                 if (name == "cache" || name == "files" || name == "databases") continue
 
@@ -192,7 +192,7 @@ class MediaScanner(private val context: Context) {
     }
 
     private fun parseFilename(filename: String): Triple<String, String, String> {
-        var clean = filename.replace(Regex("^\d+[.\s-]+"), "")
+        var clean = filename.replace(Regex("""^\d+[.\s-]+"""), "")
         val parts = clean.split(" - ", limit = 3)
 
         return when (parts.size) {
