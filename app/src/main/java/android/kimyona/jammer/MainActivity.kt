@@ -23,7 +23,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var trackAdapter: TrackAdapter
     private lateinit var scanner: MediaScanner
-    private var allTracks: List<<MediaScanner.Track> = emptyList()
+    private var allTracks: List<MediaScanner.Track> = emptyList()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         CrashReporter(this).install()
@@ -33,7 +33,7 @@ class MainActivity : AppCompatActivity() {
         scanner = MediaScanner(this)
         trackAdapter = TrackAdapter()
 
-        val recycler = findViewById<<RecyclerView>(R.id.trackRecycler)
+        val recycler = findViewById<RecyclerView>(R.id.trackRecycler)
         recycler.layoutManager = LinearLayoutManager(this)
         recycler.adapter = trackAdapter
 
@@ -48,7 +48,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         // Busca simples
-        val searchField = findViewById<<EditText>(R.id.searchField)
+        val searchField = findViewById<EditText>(R.id.searchField)
         searchField.doAfterTextChanged { text ->
             val query = text?.toString()?.lowercase() ?: ""
             val filtered = if (query.isEmpty()) allTracks else {
@@ -61,7 +61,7 @@ class MainActivity : AppCompatActivity() {
             trackAdapter.updateList(filtered)
         }
 
-        findViewById<<Button>(R.id.scanButton).setOnClickListener {
+        findViewById<Button>(R.id.scanButton).setOnClickListener {
             requestPermissionAndScan()
         }
     }
@@ -80,7 +80,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<<out String>, grantResults: IntArray) {
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == 100 && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
             performScan()

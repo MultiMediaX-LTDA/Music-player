@@ -43,9 +43,9 @@ class PlayerActivity : AppCompatActivity() {
         }
 
         btnPlayPause.setOnClickListener { togglePlayPause() }
-        findViewById<<Button>(R.id.btnPrev).setOnClickListener { /* TODO */ }
-        findViewById<<Button>(R.id.btnNext).setOnClickListener { /* TODO */ }
-        findViewById<<Button>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<Button>(R.id.btnPrev).setOnClickListener { /* TODO */ }
+        findViewById<Button>(R.id.btnNext).setOnClickListener { /* TODO */ }
+        findViewById<Button>(R.id.btnBack).setOnClickListener { finish() }
 
         seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {}

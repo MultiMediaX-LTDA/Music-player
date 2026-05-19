@@ -9,12 +9,12 @@ import android.kimyona.jammer.R
 import android.kimyona.jammer.core.media.MediaScanner
 
 class TrackAdapter(
-    private var tracks: List<<MediaScanner.Track> = emptyList()
-) : RecyclerView.Adapter<<TrackAdapter.TrackViewHolder>() {
+    private var tracks: List<MediaScanner.Track> = emptyList()
+) : RecyclerView.Adapter<TrackAdapter.TrackViewHolder>() {
 
     var onTrackClick: ((MediaScanner.Track) -> Unit)? = null
 
-    fun updateList(newList: List<<MediaScanner.Track>) {
+    fun updateList(newList: List<MediaScanner.Track>) {
         tracks = newList
         notifyDataSetChanged()
     }
