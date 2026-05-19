@@ -52,7 +52,7 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:padding="8dp"
-        android:background="?android:attr/colorSurface"
+        android:background="#2A2A2A"
         android:gravity="center_vertical">
 
         <TextView
