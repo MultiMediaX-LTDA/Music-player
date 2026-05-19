@@ -30,6 +30,13 @@ class MediaScanner(private val context: Context) {
             "avi", "wmv", "flv", "mpeg", "mpg", "bik"
         )
         private val ALL_EXTS = AUDIO_EXTS + VIDEO_EXTS
+        
+        // Pastas do sistema pra ignorar (nao sao dotfiles de musica)
+        private val SYSTEM_FOLDERS = setOf(
+            "Android", "DCIM", "Documents", "Download", "Movies", 
+            "Music", "Notifications", "Pictures", "Podcasts", "Ringtones",
+            "alarms", "media", "MIUI", "Samsung"
+        )
     }
 
     data class Track(
@@ -42,40 +49,22 @@ class MediaScanner(private val context: Context) {
         val extension: String,
         val isNative: Boolean,
         val needsFFmpeg: Boolean,
-        val isFromHiddenFolder: Boolean = false  // NOVO: veio de dotfile?
+        val isFromHiddenFolder: Boolean = false
     )
 
-    /**
-     * Escaneia TUDO: MediaStore + pastas ocultas.
-     */
     suspend fun scanAll(): List<Track> = withContext(Dispatchers.IO) {
         val tracks = mutableListOf<Track>()
-
-        // 1. Escaneia via MediaStore (musica normal)
         tracks.addAll(scanMediaStore())
-
-        // 2. Escaneia pastas ocultas (dotfiles)
         tracks.addAll(scanHiddenFolders())
-
-        // Remove duplicados (mesmo path)
         val unique = tracks.distinctBy { it.path }
-
         Log.i(TAG, "Total scanned: ${unique.size} files (${tracks.size - unique.size} duplicados removidos)")
         unique
     }
 
-    /**
-     * Escaneia via MediaStore (metodo original).
-     */
     private fun scanMediaStore(): List<Track> {
         val result = mutableListOf<Track>()
-
-        // Audio
         result.addAll(scanMediaType(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, "audio"))
-
-        // Video
         result.addAll(scanMediaType(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, "video"))
-
         return result
     }
 
@@ -123,36 +112,24 @@ class MediaScanner(private val context: Context) {
         return result
     }
 
-    /**
-     * NOVO: Escaneia pastas ocultas (dotfiles) diretamente pelo sistema de arquivos.
-     * O MediaStore nao indexa arquivos em pastas que comecam com ".".
-     */
     private fun scanHiddenFolders(): List<Track> {
         val result = mutableListOf<Track>()
-        
-        // Pasta raiz do armazenamento interno
-        val root = Environment.getExternalStorageDirectory() 
-            ?: File("/storage/emulated/0")
+        val root = Environment.getExternalStorageDirectory() ?: File("/storage/emulated/0")
         
         Log.i(TAG, "Scanning hidden folders in: ${root.absolutePath}")
-
-        // Encontra todas as pastas ocultas recursivamente
         val hiddenDirs = findHiddenDirectories(root)
         Log.i(TAG, "Found ${hiddenDirs.size} hidden directories")
 
-        var nextId = -1L  // IDs negativos pra nao conflitar com MediaStore
+        var nextId = -1L
 
         for (dir in hiddenDirs) {
             val files = dir.listFiles() ?: continue
             for (file in files) {
                 if (!file.isFile) continue
-                
                 val ext = file.extension.lowercase()
                 if (ext !in ALL_EXTS) continue
 
                 val formatInfo = SupportedFormats.getByExtension(ext)
-                
-                // Tenta extrair metadata do nome do arquivo
                 val (title, artist, album) = parseFilename(file.nameWithoutExtension)
 
                 result.add(
@@ -162,11 +139,11 @@ class MediaScanner(private val context: Context) {
                         artist = artist,
                         album = album,
                         path = file.absolutePath,
-                        duration = 0L,  // Nao temos duration sem MediaStore
+                        duration = 0L,
                         extension = ext,
                         isNative = formatInfo?.isNative ?: false,
                         needsFFmpeg = formatInfo?.needsFFmpeg ?: false,
-                        isFromHiddenFolder = true  // Marca como vindo de dotfile
+                        isFromHiddenFolder = true
                     )
                 )
             }
@@ -176,9 +153,6 @@ class MediaScanner(private val context: Context) {
         return result
     }
 
-    /**
-     * Encontra recursivamente todas as pastas que comecam com "."
-     */
     private fun findHiddenDirectories(root: File): List<File> {
         val hidden = mutableListOf<File>()
         val stack = ArrayDeque<File>()
@@ -190,16 +164,12 @@ class MediaScanner(private val context: Context) {
 
             for (child in children) {
                 if (!child.isDirectory) continue
-                
-                // Ignora pastas do sistema conhecidas
                 if (child.name in SYSTEM_FOLDERS) continue
                 
                 if (child.name.startsWith(".")) {
                     hidden.add(child)
-                    // Tambem escaneia SUBPASTAS da pasta oculta
                     stack.add(child)
                 } else {
-                    // Continua escaneando pastas normais pra achar dotfiles mais fundo
                     stack.add(child)
                 }
             }
@@ -208,29 +178,14 @@ class MediaScanner(private val context: Context) {
         return hidden
     }
 
-    /**
-     * Tenta extrair artista/titulo do nome do arquivo.
-     * Suporta formatos como "Artista - Titulo", "Artista - Album - Titulo", etc.
-     */
     private fun parseFilename(filename: String): Triple<String, String, String> {
-        // Remove numeros de track no inicio (ex: "01 - ", "1. ")
         var clean = filename.replace(Regex("^\\d+[.\\s-]+"), "")
-        
         val parts = clean.split(" - ", limit = 3)
         
         return when (parts.size) {
-            3 -> Triple(parts[2], parts[0], parts[1])  // Artista - Album - Titulo
-            2 -> Triple(parts[1], parts[0], "Unknown Album")  // Artista - Titulo
+            3 -> Triple(parts[2], parts[0], parts[1])
+            2 -> Triple(parts[1], parts[0], "Unknown Album")
             else -> Triple(clean, "Unknown Artist", "Unknown Album")
         }
-    }
-
-    companion object {
-        // Pastas do sistema pra ignorar (nao sao dotfiles de musica)
-        private val SYSTEM_FOLDERS = setOf(
-            "Android", "DCIM", "Documents", "Download", "Movies", 
-            "Music", "Notifications", "Pictures", "Podcasts", "Ringtones",
-            "alarms", "media", "MIUI", "Samsung"
-        )
     }
 }

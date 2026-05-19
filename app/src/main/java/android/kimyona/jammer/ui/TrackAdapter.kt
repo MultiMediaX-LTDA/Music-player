@@ -8,9 +8,6 @@ import androidx.recyclerview.widget.RecyclerView
 import android.kimyona.jammer.R
 import android.kimyona.jammer.core.media.MediaScanner
 
-/**
- * Adapter para mostrar a lista de músicas/vídeos na tela.
- */
 class TrackAdapter(
     private var tracks: List<MediaScanner.Track> = emptyList()
 ) : RecyclerView.Adapter<TrackAdapter.TrackViewHolder>() {
@@ -38,15 +35,14 @@ class TrackAdapter(
         private val formatText: TextView = itemView.findViewById(R.id.trackFormat)
 
         fun bind(track: MediaScanner.Track) {
-// Dentro do bind() do TrackViewHolder, adicione:
+            titleText.text = track.title
+            artistText.text = track.artist + " • " + track.album
 
-val badge = when {
-    track.isFromHiddenFolder -> "👻 ${track.extension.uppercase()} (Oculto)"
-    track.isNative -> "✅ ${track.extension.uppercase()} (Nativo)"
-    track.needsFFmpeg -> "⚠️ ${track.extension.uppercase()} (FFmpeg)"
-    else -> "❓ ${track.extension.uppercase()} (Desconhecido)"
-}
-formatText.text = badge
+            val badge = when {
+                track.isFromHiddenFolder -> "👻 " + track.extension.uppercase() + " (Oculto)"
+                track.isNative -> "✅ " + track.extension.uppercase() + " (Nativo)"
+                track.needsFFmpeg -> "⚠️ " + track.extension.uppercase() + " (FFmpeg)"
+                else -> "❓ " + track.extension.uppercase() + " (Desconhecido)"
             }
             formatText.text = badge
         }
