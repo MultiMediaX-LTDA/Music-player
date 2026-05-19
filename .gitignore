@@ -1,0 +1,26 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+# Local configuration
+local.properties
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# APKs gerados (você baixa do GitHub Actions)
+*.apk
+*.aab
+
+# Crash reports local (o app gera, mas não precisa subir)
+app/src/main/assets/crash-reports/
