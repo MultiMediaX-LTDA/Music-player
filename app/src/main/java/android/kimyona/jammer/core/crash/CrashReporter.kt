@@ -2,7 +2,6 @@ package android.kimyona.jammer.core.crash
 
 import android.content.Context
 import android.os.Build
-import android.os.Environment
 import android.util.Log
 import org.json.JSONObject
 import java.io.File
@@ -14,24 +13,28 @@ class CrashReporter(private val context: Context) {
 
     companion object {
         private const val TAG = "JammerCrash"
-        private const val REPORT_DIR = "Jammer/crash-reports"
-    }
-
-    private val crashDir: File by lazy {
-        val sdcard = Environment.getExternalStorageDirectory() ?: File("/sdcard")
-        File(sdcard, REPORT_DIR).apply { mkdirs() }
     }
 
     fun install() {
         Thread.setDefaultUncaughtExceptionHandler { _, throwable ->
-            val reportFile = saveCrash(throwable)
-            Log.i(TAG, "Crash salvo em: " + reportFile.absolutePath)
+            try {
+                val reportFile = saveCrash(throwable)
+                Log.i(TAG, "Crash salvo em: ${reportFile.absolutePath}")
+            } catch (e: Exception) {
+                Log.e(TAG, "Falha ao salvar crash report: ${e.message}")
+            }
+            // Mata o processo pra não congelar o app
+            android.os.Process.killProcess(android.os.Process.myPid())
         }
     }
 
     private fun saveCrash(throwable: Throwable): File {
         val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
-        val file = File(crashDir, "crash_" + timestamp + ".json")
+        
+        // USA A PASTA PRIVADA DO APP — não precisa de permissão de storage
+        val crashDir = File(context.getExternalFilesDir(null), "Jammer/crash-reports").apply { mkdirs() }
+        
+        val file = File(crashDir, "crash_$timestamp.json")
         val json = JSONObject().apply {
             put("device", Build.MODEL)
             put("model", Build.DEVICE)

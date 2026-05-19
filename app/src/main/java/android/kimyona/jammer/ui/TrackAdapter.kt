@@ -9,10 +9,12 @@ import android.kimyona.jammer.R
 import android.kimyona.jammer.core.media.MediaScanner
 
 class TrackAdapter(
-    private var tracks: List<MediaScanner.Track> = emptyList()
-) : RecyclerView.Adapter<TrackAdapter.TrackViewHolder>() {
+    private var tracks: List<<MediaScanner.Track> = emptyList()
+) : RecyclerView.Adapter<<TrackAdapter.TrackViewHolder>() {
 
-    fun updateList(newList: List<MediaScanner.Track>) {
+    var onTrackClick: ((MediaScanner.Track) -> Unit)? = null
+
+    fun updateList(newList: List<<MediaScanner.Track>) {
         tracks = newList
         notifyDataSetChanged()
     }
@@ -29,22 +31,17 @@ class TrackAdapter(
 
     override fun getItemCount(): Int = tracks.size
 
-    class TrackViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+    inner class TrackViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         private val titleText: TextView = itemView.findViewById(R.id.trackTitle)
         private val artistText: TextView = itemView.findViewById(R.id.trackArtist)
-        private val formatText: TextView = itemView.findViewById(R.id.trackFormat)
 
         fun bind(track: MediaScanner.Track) {
             titleText.text = track.title
-            artistText.text = track.artist + " • " + track.album
-
-            val badge = when {
-                track.isFromHiddenFolder -> "👻 " + track.extension.uppercase() + " (Oculto)"
-                track.isNative -> "✅ " + track.extension.uppercase() + " (Nativo)"
-                track.needsFFmpeg -> "⚠️ " + track.extension.uppercase() + " (FFmpeg)"
-                else -> "❓ " + track.extension.uppercase() + " (Desconhecido)"
+            artistText.text = "${track.artist} — ${track.album}"
+            
+            itemView.setOnClickListener {
+                onTrackClick?.invoke(track)
             }
-            formatText.text = badge
         }
     }
 }
