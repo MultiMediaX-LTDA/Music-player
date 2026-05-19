@@ -38,13 +38,15 @@ class TrackAdapter(
         private val formatText: TextView = itemView.findViewById(R.id.trackFormat)
 
         fun bind(track: MediaScanner.Track) {
-            titleText.text = track.title
-            artistText.text = "${track.artist} • ${track.album}"
+// Dentro do bind() do TrackViewHolder, adicione:
 
-            val badge = when {
-                track.isNative -> "✅ ${track.extension.uppercase()} (Nativo)"
-                track.needsFFmpeg -> "⚠️ ${track.extension.uppercase()} (FFmpeg)"
-                else -> "❓ ${track.extension.uppercase()} (Desconhecido)"
+val badge = when {
+    track.isFromHiddenFolder -> "👻 ${track.extension.uppercase()} (Oculto)"
+    track.isNative -> "✅ ${track.extension.uppercase()} (Nativo)"
+    track.needsFFmpeg -> "⚠️ ${track.extension.uppercase()} (FFmpeg)"
+    else -> "❓ ${track.extension.uppercase()} (Desconhecido)"
+}
+formatText.text = badge
             }
             formatText.text = badge
         }
