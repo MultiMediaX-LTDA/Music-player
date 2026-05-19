@@ -1,9 +1,9 @@
 package android.kimyona.jammer.core.ffmpeg
 
 import android.util.Log
-import com.arthenica.ffmpegkit.FFmpegKit
-import com.arthenica.ffmpegkit.FFprobeKit
-import com.arthenica.ffmpegkit.ReturnCode
+import io.github.jamaismagic.ffmpeg.FFmpegKit
+import io.github.jamaismagic.ffmpeg.FFprobeKit
+import io.github.jamaismagic.ffmpeg.ReturnCode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
