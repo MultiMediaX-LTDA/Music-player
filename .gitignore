@@ -24,3 +24,6 @@ Thumbs.db
 
 # Crash reports local (o app gera, mas não precisa subir)
 app/src/main/assets/crash-reports/
+
+# Check command
+check.py

@@ -12,30 +12,28 @@ import java.io.File
 
 /**
  * Escaneia o celular e encontra todos os arquivos de midia.
- * Classifica cada um como "nativo" ou "precisa de FFmpeg".
- * AGORA escaneia TODAS as pastas (incluindo .Music e outras ocultas).
+ * API 35 compativel - usa paths corretos para Android 15.
  */
 class MediaScanner(private val context: Context) {
 
     companion object {
         private const val TAG = "JammerScanner"
 
-        // Extensoes de audio e video que o Jammer reconhece
         private val AUDIO_EXTS = setOf(
-            "mp3", "flac", "ogg", "opus", "aac", "m4a", "wav", 
+            "mp3", "flac", "ogg", "opus", "aac", "m4a", "wav",
             "wma", "mid", "midi"
         )
         private val VIDEO_EXTS = setOf(
-            "mp4", "mkv", "webm", "mov", "3gp", 
+            "mp4", "mkv", "webm", "mov", "3gp",
             "avi", "wmv", "flv", "mpeg", "mpg", "bik"
         )
         private val ALL_EXTS = AUDIO_EXTS + VIDEO_EXTS
 
-        // Pastas do sistema pra ignorar (nao sao de musica)
         private val SYSTEM_FOLDERS = setOf(
-            "Android", "DCIM", "Documents", "Download", "Movies", 
+            "Android", "DCIM", "Documents", "Download", "Movies",
             "Notifications", "Pictures", "Podcasts", "Ringtones",
-            "alarms", "media", "MIUI", "Samsung", "cache", "tmp", "temp"
+            "alarms", "media", "MIUI", "Samsung", "cache", "tmp", "temp",
+            "data", "obb", "tencent", "baidu", "alipay"
         )
     }
 
@@ -52,8 +50,8 @@ class MediaScanner(private val context: Context) {
         val isFromHiddenFolder: Boolean = false
     )
 
-    suspend fun scanAll(): List<Track> = withContext(Dispatchers.IO) {
-        val tracks = mutableListOf<Track>()
+    suspend fun scanAll(): List<<Track> = withContext(Dispatchers.IO) {
+        val tracks = mutableListOf<<Track>()
         tracks.addAll(scanMediaStore())
         tracks.addAll(scanAllFolders())
         val unique = tracks.distinctBy { it.path }
@@ -61,15 +59,15 @@ class MediaScanner(private val context: Context) {
         unique
     }
 
-    private fun scanMediaStore(): List<Track> {
-        val result = mutableListOf<Track>()
+    private fun scanMediaStore(): List<<Track> {
+        val result = mutableListOf<<Track>()
         result.addAll(scanMediaType(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, "audio"))
         result.addAll(scanMediaType(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, "video"))
         return result
     }
 
-    private fun scanMediaType(uri: Uri, type: String): List<Track> {
-        val result = mutableListOf<Track>()
+    private fun scanMediaType(uri: Uri, type: String): List<<Track> {
+        val result = mutableListOf<<Track>()
         val projection = arrayOf(
             MediaStore.MediaColumns._ID,
             MediaStore.MediaColumns.TITLE,
@@ -113,12 +111,15 @@ class MediaScanner(private val context: Context) {
     }
 
     /**
-     * Scaneia TODAS as pastas do usuario (incluindo .Music e outras ocultas).
-     * MediaStore nao indexa pastas ocultas, entao fazemos manualmente.
+     * Scaneia TODAS as pastas manualmente.
+     * API 35: usa context.getExternalFilesDir(null)?.parentFile como fallback.
      */
-    private fun scanAllFolders(): List<Track> {
-        val result = mutableListOf<Track>()
-        val root = Environment.getExternalStorageDirectory() ?: File("/storage/emulated/0")
+    private fun scanAllFolders(): List<<Track> {
+        val result = mutableListOf<<Track>()
+
+        // API 35: Environment.getExternalStorageDirectory() nao funciona mais
+        // Usamos o path real do storage interno
+        val root = getStorageRoot()
 
         Log.i(TAG, "Scanning ALL folders in: ${root.absolutePath}")
         val allDirs = findAllDirectories(root)
@@ -160,9 +161,25 @@ class MediaScanner(private val context: Context) {
     }
 
     /**
-     * Encontra TODAS as pastas do usuario (nao so as ocultas).
-     * Ignora pastas do sistema e pastas de apps.
+     * API 35: retorna o path correto do armazenamento interno.
      */
+    private fun getStorageRoot(): File {
+        // Tenta o path padrao do Android
+        val standardPath = File("/storage/emulated/0")
+        if (standardPath.exists() && standardPath.isDirectory) {
+            return standardPath
+        }
+
+        // Fallback: usa o diretorio de files do app pra deduzir o path
+        val fallback = context.getExternalFilesDir(null)?.parentFile?.parentFile?.parentFile
+        if (fallback != null && fallback.exists()) {
+            return fallback
+        }
+
+        // Ultimo recurso
+        return File("/sdcard")
+    }
+
     private fun findAllDirectories(root: File): List<File> {
         val all = mutableListOf<File>()
         val stack = ArrayDeque<File>()
@@ -176,11 +193,7 @@ class MediaScanner(private val context: Context) {
                 if (!child.isDirectory) continue
                 val name = child.name
 
-                // Ignora pastas do sistema
                 if (name in SYSTEM_FOLDERS) continue
-                // Ignora pastas de apps
-                if (name.startsWith(".") && name.length > 1 && !name.matches(Regex("""^\.[A-Za-z].*"""))) continue
-                // Ignora cache e dados de apps
                 if (name == "cache" || name == "files" || name == "databases") continue
 
                 all.add(child)

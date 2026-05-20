@@ -3,10 +3,14 @@ package android.kimyona.jammer
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
+import android.provider.Settings
 import android.widget.Button
 import android.widget.EditText
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -23,7 +27,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var trackAdapter: TrackAdapter
     private lateinit var scanner: MediaScanner
-    private var allTracks: List<MediaScanner.Track> = emptyList()
+    private var allTracks: List<<MediaScanner.Track> = emptyList()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         CrashReporter(this).install()
@@ -33,7 +37,7 @@ class MainActivity : AppCompatActivity() {
         scanner = MediaScanner(this)
         trackAdapter = TrackAdapter()
 
-        val recycler = findViewById<RecyclerView>(R.id.trackRecycler)
+        val recycler = findViewById<<RecyclerView>(R.id.trackRecycler)
         recycler.layoutManager = LinearLayoutManager(this)
         recycler.adapter = trackAdapter
 
@@ -48,7 +52,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         // Busca simples
-        val searchField = findViewById<EditText>(R.id.searchField)
+        val searchField = findViewById<<EditText>(R.id.searchField)
         searchField.doAfterTextChanged { text ->
             val query = text?.toString()?.lowercase() ?: ""
             val filtered = if (query.isEmpty()) allTracks else {
@@ -61,29 +65,57 @@ class MainActivity : AppCompatActivity() {
             trackAdapter.updateList(filtered)
         }
 
-        findViewById<Button>(R.id.scanButton).setOnClickListener {
+        findViewById<<Button>(R.id.scanButton).setOnClickListener {
             requestPermissionAndScan()
         }
     }
 
     private fun requestPermissionAndScan() {
-        val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            Manifest.permission.READ_MEDIA_AUDIO
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            // Android 11+ (API 30+): precisa de MANAGE_EXTERNAL_STORAGE
+            if (Environment.isExternalStorageManager()) {
+                performScan()
+            } else {
+                Toast.makeText(this, "Ative 'Acesso a todos os arquivos' para o Jammer", Toast.LENGTH_LONG).show()
+                val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                    data = Uri.parse("package:$packageName")
+                }
+                startActivityForResult(intent, 200)
+            }
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            // Android 13+ (API 33+): READ_MEDIA_AUDIO
+            val permission = Manifest.permission.READ_MEDIA_AUDIO
+            if (ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED) {
+                performScan()
+            } else {
+                ActivityCompat.requestPermissions(this, arrayOf(permission), 100)
+            }
         } else {
-            Manifest.permission.READ_EXTERNAL_STORAGE
-        }
-
-        if (ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED) {
-            performScan()
-        } else {
-            ActivityCompat.requestPermissions(this, arrayOf(permission), 100)
+            // Android 10 e abaixo: READ_EXTERNAL_STORAGE
+            val permission = Manifest.permission.READ_EXTERNAL_STORAGE
+            if (ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED) {
+                performScan()
+            } else {
+                ActivityCompat.requestPermissions(this, arrayOf(permission), 100)
+            }
         }
     }
 
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == 100 && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
             performScan()
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 200) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager()) {
+                performScan()
+            } else {
+                Toast.makeText(this, "Permissão necessária para escanear músicas", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
@@ -91,6 +123,7 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             allTracks = scanner.scanAll()
             trackAdapter.updateList(allTracks)
+            Toast.makeText(this@MainActivity, "Encontradas ${allTracks.size} músicas", Toast.LENGTH_SHORT).show()
         }
     }
 }
