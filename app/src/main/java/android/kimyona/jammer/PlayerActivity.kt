@@ -1,7 +1,6 @@
 package android.kimyona.jammer
 
 import android.os.Bundle
-import android.widget.ImageButton
 import android.widget.Button
 import android.widget.SeekBar
 import android.widget.TextView
@@ -30,7 +29,7 @@ class PlayerActivity : AppCompatActivity() {
         seekBar = findViewById<SeekBar>(R.id.playerSeekBar)
         currentTime = findViewById<TextView>(R.id.playerCurrentTime)
         totalTime = findViewById<TextView>(R.id.playerTotalTime)
-        btnPlayPause = findViewById<ImageButton>(R.id.btnPlayPause)
+        btnPlayPause = findViewById<Button>(R.id.btnPlayPause)
 
         val path = intent.getStringExtra("track_path") ?: ""
         val title = intent.getStringExtra("track_title") ?: "Unknown"
