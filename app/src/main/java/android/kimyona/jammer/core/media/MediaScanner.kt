@@ -50,8 +50,8 @@ class MediaScanner(private val context: Context) {
         val isFromHiddenFolder: Boolean = false
     )
 
-    suspend fun scanAll(): List<<Track> = withContext(Dispatchers.IO) {
-        val tracks = mutableListOf<<Track>()
+    suspend fun scanAll(): List<Track> = withContext(Dispatchers.IO) {
+        val tracks = mutableListOf<Track>()
         tracks.addAll(scanMediaStore())
         tracks.addAll(scanAllFolders())
         val unique = tracks.distinctBy { it.path }
@@ -59,15 +59,15 @@ class MediaScanner(private val context: Context) {
         unique
     }
 
-    private fun scanMediaStore(): List<<Track> {
-        val result = mutableListOf<<Track>()
+    private fun scanMediaStore(): List<Track> {
+        val result = mutableListOf<Track>()
         result.addAll(scanMediaType(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, "audio"))
         result.addAll(scanMediaType(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, "video"))
         return result
     }
 
-    private fun scanMediaType(uri: Uri, type: String): List<<Track> {
-        val result = mutableListOf<<Track>()
+    private fun scanMediaType(uri: Uri, type: String): List<Track> {
+        val result = mutableListOf<Track>()
         val projection = arrayOf(
             MediaStore.MediaColumns._ID,
             MediaStore.MediaColumns.TITLE,
@@ -114,8 +114,8 @@ class MediaScanner(private val context: Context) {
      * Scaneia TODAS as pastas manualmente.
      * API 35: usa context.getExternalFilesDir(null)?.parentFile como fallback.
      */
-    private fun scanAllFolders(): List<<Track> {
-        val result = mutableListOf<<Track>()
+    private fun scanAllFolders(): List<Track> {
+        val result = mutableListOf<Track>()
 
         // API 35: Environment.getExternalStorageDirectory() nao funciona mais
         // Usamos o path real do storage interno
