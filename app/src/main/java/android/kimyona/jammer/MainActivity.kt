@@ -10,6 +10,7 @@ import android.os.Environment
 import android.provider.Settings
 import android.widget.Button
 import android.widget.EditText
+import android.widget.ProgressBar
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -35,7 +36,7 @@ class MainActivity : AppCompatActivity() {
         CrashReporter(this).install()
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-        scanProgress = findViewById(R.id.scanProgress)
+        scanProgress = findViewById<ProgressBar>(R.id.scanProgress)
         scanner = MediaScanner(this)
         trackAdapter = TrackAdapter()
 

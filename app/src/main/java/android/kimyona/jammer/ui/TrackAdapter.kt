@@ -32,8 +32,8 @@ class TrackAdapter(
     override fun getItemCount(): Int = tracks.size
 
     inner class TrackViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
-        private val titleText: TextView = itemView.findViewById(R.id.trackTitle)
-        private val artistText: TextView = itemView.findViewById(R.id.trackArtist)
+        private val titleText: TextView = itemView.findViewById<TextView>(R.id.trackTitle)
+        private val artistText: TextView = itemView.findViewById<TextView>(R.id.trackArtist)
 
         fun bind(track: MediaScanner.Track) {
             titleText.text = track.title
