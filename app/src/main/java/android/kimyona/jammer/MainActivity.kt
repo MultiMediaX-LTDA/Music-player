@@ -11,6 +11,7 @@ import android.provider.Settings
 import android.widget.Button
 import android.widget.EditText
 import android.widget.Toast
+import android.widget.ProgressBar
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
