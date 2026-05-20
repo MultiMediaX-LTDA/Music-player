@@ -11,7 +11,6 @@ import android.provider.Settings
 import android.widget.Button
 import android.widget.EditText
 import android.widget.Toast
-import android.widget.ProgressBar
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -127,9 +126,14 @@ class MainActivity : AppCompatActivity() {
         scanProgress.isIndeterminate = false
         scanProgress.progress = 0
 
+        var lastUpdateTime = 0L
+
         lifecycleScope.launch {
             allTracks = scanner.scanAll { current, total ->
-                runOnUiThread {
+                val now = System.currentTimeMillis()
+                // Atualiza UI só a cada 150ms pra evitar flickering
+                if (now - lastUpdateTime > 150) {
+                    lastUpdateTime = now
                     val percentage = (current * 100 / total)
                     scanProgress.progress = percentage
                 }
