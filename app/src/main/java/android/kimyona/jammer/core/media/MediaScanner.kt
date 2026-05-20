@@ -14,6 +14,7 @@ import java.io.File
  * Escaneia o celular e encontra todos os arquivos de midia.
  * API 35 compativel - usa paths corretos para Android 15.
  */
+ 
 class MediaScanner(private val context: Context) {
 
     companion object {
@@ -50,10 +51,10 @@ class MediaScanner(private val context: Context) {
         val isFromHiddenFolder: Boolean = false
     )
 
-    suspend fun scanAll(): List<Track> = withContext(Dispatchers.IO) {
+    suspend fun scanAll(onProgress: (Int, Int) -> Unit = { _, _ -> }): List<Track> = withContext(Dispatchers.IO) {
         val tracks = mutableListOf<Track>()
         tracks.addAll(scanMediaStore())
-        tracks.addAll(scanAllFolders())
+        tracks.addAll(scanAllFolders(onProgress))
         val unique = tracks.distinctBy { it.path }
         Log.i(TAG, "Total scanned: ${unique.size} files (${tracks.size - unique.size} duplicados removidos)")
         unique

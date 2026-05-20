@@ -22,18 +22,20 @@ import android.kimyona.jammer.core.crash.CrashReporter
 import android.kimyona.jammer.core.media.MediaScanner
 import android.kimyona.jammer.ui.TrackAdapter
 import kotlinx.coroutines.launch
+import android.view.View
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var trackAdapter: TrackAdapter
     private lateinit var scanner: MediaScanner
+    private lateinit var scanProgress: ProgressBar
     private var allTracks: List<MediaScanner.Track> = emptyList()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         CrashReporter(this).install()
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-
+        scanProgress = findViewById(R.id.scanProgress)
         scanner = MediaScanner(this)
         trackAdapter = TrackAdapter()
 
@@ -120,9 +122,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun performScan() {
+        scanProgress.visibility = View.VISIBLE
+        scanProgress.isIndeterminate = false
+        scanProgress.progress = 0
+
         lifecycleScope.launch {
-            allTracks = scanner.scanAll()
+            allTracks = scanner.scanAll { current, total ->
+                runOnUiThread {
+                    val percentage = (current * 100 / total)
+                    scanProgress.progress = percentage
+                }
+            }
+
             trackAdapter.updateList(allTracks)
+            scanProgress.visibility = View.GONE
             Toast.makeText(this@MainActivity, "Encontradas ${allTracks.size} músicas", Toast.LENGTH_SHORT).show()
         }
     }

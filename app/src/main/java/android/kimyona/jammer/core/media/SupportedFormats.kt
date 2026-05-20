@@ -5,6 +5,7 @@ package android.kimyona.jammer.core.media
  * Nativo = ExoPlayer toca direto.
  * FFmpeg = precisa converter antes de tocar.
  */
+ 
 object SupportedFormats {
 
     data class FormatInfo(

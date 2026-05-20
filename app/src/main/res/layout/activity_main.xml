@@ -40,6 +40,14 @@
         android:background="?android:attr/editTextBackground"
         android:inputType="text" />
 
+    <ProgressBar
+        android:id="@+id/scanProgress"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:indeterminate="true"
+        android:visibility="gone" />
+        
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/trackRecycler"
         android:layout_width="match_parent"
