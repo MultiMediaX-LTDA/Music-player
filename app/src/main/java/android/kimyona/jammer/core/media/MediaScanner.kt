@@ -115,21 +115,19 @@ class MediaScanner(private val context: Context) {
      * Scaneia TODAS as pastas manualmente.
      * API 35: usa context.getExternalFilesDir(null)?.parentFile como fallback.
      */
-    private fun scanAllFolders(): List<Track> {
+    private fun scanAllFolders(onProgress: (Int, Int) -> Unit): List<Track> {
         val result = mutableListOf<Track>()
-
-        // API 35: Environment.getExternalStorageDirectory() nao funciona mais
-        // Usamos o path real do storage interno
         val root = getStorageRoot()
-
+        
         Log.i(TAG, "Scanning ALL folders in: ${root.absolutePath}")
         val allDirs = findAllDirectories(root)
         Log.i(TAG, "Found ${allDirs.size} directories to scan")
 
         var nextId = -1L
         var trackCount = 0
+        val totalDirs = allDirs.size
 
-        for (dir in allDirs) {
+        for ((index, dir) in allDirs.withIndex()) {
             val files = dir.listFiles() ?: continue
             for (file in files) {
                 if (!file.isFile) continue
@@ -154,6 +152,11 @@ class MediaScanner(private val context: Context) {
                     )
                 )
                 trackCount++
+            }
+            
+            // Reporta progresso a cada 5 pastas ou no final
+            if (index % 5 == 0 || index == totalDirs - 1) {
+                onProgress(index + 1, totalDirs)
             }
         }
 
