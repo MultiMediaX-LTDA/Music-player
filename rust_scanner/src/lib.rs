@@ -1,8 +1,6 @@
-use std::ffi::CStr;
-use std::os::raw::{c_char, c_int};
 use std::path::Path;
 
-use lofty::file::AudioFile;
+use lofty::file::{AudioFile, TaggedFileExt};
 use lofty::probe::Probe;
 use lofty::tag::ItemKey;
 use serde::{Deserialize, Serialize};
@@ -56,10 +54,10 @@ fn scan_directory(dir: &str) -> Vec<TrackInfo> {
                         genre: tag.and_then(|t| t.genre().map(|s| s.to_string())),
                         year: tag.and_then(|t| t.year()),
                         track_number: tag.and_then(|t| t.track()),
-                        duration_ms: properties.duration().map(|d| d.as_millis() as u64),
+                        duration_ms: Some(properties.duration().as_millis() as u64),
                         bitrate: properties.audio_bitrate(),
                         sample_rate: properties.sample_rate(),
-                        channels: properties.channels(),
+                        channels: properties.channels().map(|c| c as u32),
                     };
                     tracks.push(track);
                 }
