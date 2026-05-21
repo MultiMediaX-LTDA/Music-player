@@ -8,6 +8,7 @@ import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.SeekBar
 import android.widget.TextView
+import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import android.kimyona.jammer.R
@@ -15,8 +16,8 @@ import android.kimyona.jammer.ui.viewmodel.PlayerViewModel
 
 /**
  * Fragment do player em tela cheia.
- * Capa, título, artista, seekbar, controles.
- * SeekBar agora se move sozinha e respeita duration real.
+ * Corrigido: agora mostra UI mesmo sem track, usa findViewById pros tempos,
+ * e tem estado vazio decente.
  */
 class PlayerFragment : Fragment() {
 
@@ -45,27 +46,26 @@ class PlayerFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+        // Bind de TODOS os views pelo ID correto do XML
         ivCover = view.findViewById(R.id.ivCover)
         tvTitle = view.findViewById(R.id.tvTitle)
         tvArtist = view.findViewById(R.id.tvArtist)
         seekBar = view.findViewById(R.id.seekBar)
+        tvCurrentTime = view.findViewById(R.id.tvCurrentTime)
+        tvTotalTime = view.findViewById(R.id.tvTotalTime)
         btnPlayPause = view.findViewById(R.id.btnPlayPause)
         btnPrev = view.findViewById(R.id.btnPrev)
         btnNext = view.findViewById(R.id.btnNext)
 
-        // Adiciona TextViews de tempo se não existirem no layout
-        // Se o layout não tem, criamos dinamicamente ou usamos tags
-        tvCurrentTime = view.findViewWithTag("tvCurrentTime") as? TextView
-            ?: TextView(requireContext()).apply { tag = "tvCurrentTime" }
-        tvTotalTime = view.findViewWithTag("tvTotalTime") as? TextView
-            ?: TextView(requireContext()).apply { tag = "tvTotalTime" }
+        // Estado inicial: vazio, mas visível
+        showEmptyState()
 
         // Observa track atual
         viewModel.currentTrack.observe(viewLifecycleOwner) { track ->
-            track?.let {
-                tvTitle.text = it.title
-                tvArtist.text = it.artist
-                ivCover.setImageResource(R.drawable.album_placeholder_vinyl)
+            if (track != null) {
+                showTrack(track)
+            } else {
+                showEmptyState()
             }
         }
 
@@ -84,16 +84,7 @@ class PlayerFragment : Fragment() {
                     seekBar.max = duration.toInt()
                     seekBar.progress = posMs.toInt()
                 }
-                tvCurrentTime?.text = formatTime(posMs)
-            }
-        }
-
-        // Duration inicial quando track muda
-        viewModel.currentTrack.observe(viewLifecycleOwner) {
-            val duration = viewModel.getDuration()
-            if (duration > 0) {
-                seekBar.max = duration.toInt()
-                tvTotalTime?.text = formatTime(duration)
+                tvCurrentTime.text = formatTime(posMs)
             }
         }
 
@@ -105,7 +96,7 @@ class PlayerFragment : Fragment() {
         seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (fromUser) {
-                    tvCurrentTime?.text = formatTime(progress.toLong())
+                    tvCurrentTime.text = formatTime(progress.toLong())
                 }
             }
             override fun onStartTrackingTouch(seekBar: SeekBar?) {
@@ -118,6 +109,40 @@ class PlayerFragment : Fragment() {
                 }
             }
         })
+    }
+
+    private fun showEmptyState() {
+        tvTitle.text = "No track playing"
+        tvArtist.text = "Tap a song from Library"
+        ivCover.setImageResource(R.drawable.album_placeholder_vinyl)
+        tvCurrentTime.text = formatTime(0)
+        tvTotalTime.text = formatTime(0)
+        seekBar.max = 0
+        seekBar.progress = 0
+        seekBar.isEnabled = false
+        btnPlayPause.isEnabled = false
+        btnPrev.isEnabled = false
+        btnNext.isEnabled = false
+    }
+
+    private fun showTrack(track: android.kimyona.jammer.data.entity.Track) {
+        tvTitle.text = track.title
+        tvArtist.text = track.artist
+        ivCover.setImageResource(R.drawable.album_placeholder_vinyl)
+        seekBar.isEnabled = true
+        btnPlayPause.isEnabled = true
+        btnPrev.isEnabled = true
+        btnNext.isEnabled = true
+
+        // Atualiza duration total quando track muda
+        val duration = viewModel.getDuration()
+        if (duration > 0) {
+            seekBar.max = duration.toInt()
+            tvTotalTime.text = formatTime(duration)
+        } else {
+            tvTotalTime.text = formatTime(track.durationMs)
+            seekBar.max = track.durationMs.toInt()
+        }
     }
 
     private fun formatTime(ms: Long): String {
