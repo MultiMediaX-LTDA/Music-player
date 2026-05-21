@@ -1,98 +1,109 @@
-use std::ffi::{CStr, CString, c_char};
+use std::ffi::CStr;
+use std::os::raw::{c_char, c_int};
 use std::path::Path;
+
+use lofty::file::AudioFile;
+use lofty::probe::Probe;
+use lofty::tag::ItemKey;
+use serde::{Deserialize, Serialize};
 use walkdir::WalkDir;
-use lofty::read_from_path;
-use lofty::file::{TaggedFileExt, AudioFile};
-use lofty::tag::Accessor;
-use serde::Serialize;
-use rayon::prelude::*;
 
-#[derive(Serialize)]
-pub struct Track {
-    pub path: String,
-    pub title: String,
-    pub artist: String,
-    pub album: String,
-    pub duration_ms: u32,
-    pub format: String,
+#[derive(Serialize, Deserialize, Debug)]
+struct TrackInfo {
+    path: String,
+    title: Option<String>,
+    artist: Option<String>,
+    album: Option<String>,
+    album_artist: Option<String>,
+    genre: Option<String>,
+    year: Option<u32>,
+    track_number: Option<u32>,
+    duration_ms: Option<u64>,
+    bitrate: Option<u32>,
+    sample_rate: Option<u32>,
+    channels: Option<u32>,
 }
 
-#[no_mangle]
-pub extern "C" fn Java_android_kimyona_jammer_core_media_RustBridge_nativeScanDirectory(
-    _env: *mut jni::sys::JNIEnv,
-    _class: jni::sys::jclass,
-    dir_ptr: *const c_char,
-) -> *mut c_char {
-    let dir = unsafe { CStr::from_ptr(dir_ptr).to_string_lossy() };
-    let tracks = scan_directory(&dir);
+fn scan_directory(dir: &str) -> Vec<TrackInfo> {
+    let mut tracks = Vec::new();
+    let path = Path::new(dir);
 
-    let json = match serde_json::to_string(&tracks) {
-        Ok(s) => s,
-        Err(_) => return CString::new("[]").unwrap().into_raw(),
-    };
+    if !path.exists() || !path.is_dir() {
+        return tracks;
+    }
 
-    CString::new(json).unwrap().into_raw()
-}
-
-fn scan_directory(dir: &str) -> Vec<Track> {
-    // Coleta todos os caminhos válidos primeiro (sequencial, pois WalkDir não é Send)
-    let paths: Vec<_> = WalkDir::new(dir)
-        .follow_links(false)        // NÃO segue symlinks → evita loops e pastas estranhas
-        .max_depth(3)              // Reduz profundidade → não entra em subpastas infinitas
+    for entry in WalkDir::new(path)
+        .follow_links(false)
         .into_iter()
         .filter_map(|e| e.ok())
-        .filter(|e| {
-            let p = e.path();
-            is_audio_file(p) && is_reasonable_size(p)
-        })
-        .map(|e| e.path().to_path_buf())
-        .collect();
+    {
+        let path = entry.path();
+        if path.is_file() {
+            if let Ok(Some(mut probe)) = Probe::open(path) {
+                if let Ok(tagged_file) = probe.read() {
+                    let properties = tagged_file.properties();
+                    let tag = tagged_file.primary_tag();
 
-    // Processa em paralelo usando todos os núcleos do processador
-    let tracks: Vec<Track> = paths
-        .par_iter()
-        .filter_map(|path| parse_track(path).ok())
-        .collect();
+                    let track = TrackInfo {
+                        path: path.to_string_lossy().to_string(),
+                        title: tag.and_then(|t| t.title().map(|s| s.to_string())),
+                        artist: tag.and_then(|t| t.artist().map(|s| s.to_string())),
+                        album: tag.and_then(|t| t.album().map(|s| s.to_string())),
+                        album_artist: tag.and_then(|t| {
+                            t.get_string(&ItemKey::AlbumArtist)
+                                .map(|s| s.to_string())
+                        }),
+                        genre: tag.and_then(|t| t.genre().map(|s| s.to_string())),
+                        year: tag.and_then(|t| t.year()),
+                        track_number: tag.and_then(|t| t.track()),
+                        duration_ms: properties.duration().map(|d| d.as_millis() as u64),
+                        bitrate: properties.audio_bitrate(),
+                        sample_rate: properties.sample_rate(),
+                        channels: properties.channels(),
+                    };
+                    tracks.push(track);
+                }
+            }
+        }
+    }
 
     tracks
 }
 
-fn is_audio_file(path: &Path) -> bool {
-    let ext = path.extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_lowercase();
+#[no_mangle]
+pub extern "system" fn Java_android_kimyona_jammer_core_media_RustBridge_nativeScanDirectory(
+    mut env: jni::JNIEnv,
+    _class: jni::objects::JClass,
+    dir: jni::objects::JString,
+) -> jni::sys::jstring {
+    // Convert JString → Rust String safely
+    let dir_str: String = match env.get_string(&dir) {
+        Ok(s) => s.into(),
+        Err(_) => return std::ptr::null_mut(),
+    };
 
-    matches!(ext.as_str(), 
-        "mp3" | "flac" | "ogg" | "opus" | "m4a" | "aac" | "wma" | "wav" | "midi" | "mid"
-    )
-}
+    let tracks = scan_directory(&dir_str);
 
-/// Ignora arquivos vazios ou muito grandes (provavelmente vídeos com extensão errada)
-fn is_reasonable_size(path: &Path) -> bool {
-    if let Ok(meta) = std::fs::metadata(path) {
-        let size = meta.len();
-        size > 1024 && size < 200_000_000  // Entre 1KB e 200MB
-    } else {
-        false
+    let json = match serde_json::to_string(&tracks) {
+        Ok(s) => s,
+        Err(_) => "[]".to_string(),
+    };
+
+    // Convert Rust String → JString (Java)
+    match env.new_string(&json) {
+        Ok(jstring) => jstring.into_raw(),
+        Err(_) => std::ptr::null_mut(),
     }
 }
 
-fn parse_track(path: &Path) -> Result<Track, Box<dyn std::error::Error>> {
-    let tagged_file = read_from_path(path)?;
-
-    let tag = tagged_file.primary_tag()
-        .or_else(|| tagged_file.first_tag())
-        .ok_or("No tags found")?;
-
-    let props = tagged_file.properties();
-
-    Ok(Track {
-        path: path.to_string_lossy().to_string(),
-        title: tag.title().as_deref().unwrap_or("Unknown Title").to_string(),
-        artist: tag.artist().as_deref().unwrap_or("Unknown Artist").to_string(),
-        album: tag.album().as_deref().unwrap_or("Unknown Album").to_string(),
-        duration_ms: props.duration().as_millis() as u32,
-        format: path.extension().and_then(|e| e.to_str()).unwrap_or("unknown").to_uppercase(),
-    })
+#[no_mangle]
+pub extern "system" fn Java_android_kimyona_jammer_core_media_RustBridge_nativeGetVersion(
+    _env: jni::JNIEnv,
+    _class: jni::objects::JClass,
+) -> jni::sys::jstring {
+    let version = env!("CARGO_PKG_VERSION");
+    match _env.new_string(version) {
+        Ok(jstring) => jstring.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
 }
