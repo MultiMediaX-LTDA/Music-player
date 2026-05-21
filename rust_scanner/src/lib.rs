@@ -3,7 +3,9 @@ use std::path::Path;
 use walkdir::WalkDir;
 use lofty::read_from_path;
 use lofty::file::{TaggedFileExt, AudioFile};
+use lofty::tag::Accessor;
 use serde::Serialize;
+
 
 #[derive(Serialize)]
 pub struct Track {
