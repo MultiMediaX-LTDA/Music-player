@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FAQ - Jammer</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1A1A1A;
+            color: #E0E0E0;
+            line-height: 1.6;
+            padding: 16px;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        h1 { color: #D4A574; border-bottom: 2px solid #D4A574; padding-bottom: 8px; }
+        .faq-item {
+            background: #2A2A2A;
+            border-radius: 8px;
+            padding: 16px;
+            margin: 12px 0;
+        }
+        .question {
+            color: #D4A574;
+            font-weight: bold;
+            font-size: 16px;
+            margin-bottom: 8px;
+        }
+        .answer { color: #CCCCCC; }
+        .warning {
+            background: #3A2A2A;
+            border: 1px solid #FF6B6B;
+            border-radius: 8px;
+            padding: 12px;
+            margin: 12px 0;
+        }
+        .warning::before { content: "⚠️ "; }
+    </style>
+</head>
+<body>
+    <h1>❓ Perguntas Frequentes</h1>
+
+    <div class="faq-item">
+        <div class="question">O Jammer coleta meus dados?</div>
+        <div class="answer">
+            <strong>Não.</strong> Zero rastreamento. Zero anúncios. Zero telemetria. Seus dados de música ficam apenas no seu celular. 
+            Crash reports são salvos localmente em JSON, nada é enviado pra nuvem.
+        </div>
+    </div>
+
+    <div class="faq-item">
+        <div class="question">Por que precisa de permissão de "todos os arquivos"?</div>
+        <div class="answer">
+            No modo <strong>Automático</strong>, o Jammer precisa varrer seu celular inteiro pra encontrar músicas. 
+            No modo <strong>Manual</strong>, você escolhe as pastas via SAF e essa permissão não é necessária.
+        </div>
+    </div>
+
+    <div class="faq-item">
+        <div class="question">Posso mudar de Automático pra Manual depois?</div>
+        <div class="answer">
+            Sim! Vá em Configurações (em breve) ou reinstale o app. A tela de onboarding aparece só na primeira vez, 
+            mas você pode resetar nas preferências do sistema.
+        </div>
+    </div>
+
+    <div class="faq-item">
+        <div class="question">Como funcionam as letras (LRC)?</div>
+        <div class="answer">
+            Coloque um arquivo <code>.lrc</code> com o <strong>mesmo nome</strong> da música no mesmo diretório. 
+            Ex: <code>musica.mp3</code> e <code>musica.lrc</code>. O Jammer detecta automaticamente.
+        </div>
+    </div>
+
+    <div class="faq-item">
+        <div class="question">Suporta múltiplos artistas?</div>
+        <div class="answer">
+            Sim! Use vírgula ou ponto-e-vírgula nos metadados: "Artist A, Artist B". 
+            O Jammer separa e permite busca por qualquer um deles.
+        </div>
+    </div>
+
+    <div class="warning">
+        <strong>Aviso:</strong> O Jammer ainda está em desenvolvimento (MVP). Algumas features do <code>le-ideas.txt</code> 
+        ainda não foram implementadas. Contribuições são bem-vindas!
+    </div>
+
+    <p style="text-align:center; margin-top:32px; color:#888;">
+        Jammer v1.0-Tidal • Licença: FOSS MultMediaX
+    </p>
+</body>
+</html>

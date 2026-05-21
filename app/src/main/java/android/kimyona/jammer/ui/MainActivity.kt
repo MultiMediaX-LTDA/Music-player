@@ -1,14 +1,11 @@
 package android.kimyona.jammer.ui
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.os.Build
+import android.content.Intent
 import android.os.Bundle
+import android.view.Menu
+import android.view.MenuItem
 import android.widget.Toast
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.viewpager2.adapter.FragmentStateAdapter
 import androidx.viewpager2.widget.ViewPager2
@@ -18,51 +15,34 @@ import android.kimyona.jammer.R
 import android.kimyona.jammer.ui.fragments.LibraryFragment
 import android.kimyona.jammer.ui.fragments.PlayerFragment
 import android.kimyona.jammer.ui.fragments.QueueFragment
-import android.kimyona.jammer.ui.viewmodel.PlayerViewModel
+import android.kimyona.jammer.ui.popup.HtmlPopupActivity
 
 /**
- * Activity principal com 3 abas:
- * - Library (lista de músicas)
- * - Player (tela grande com controles)
- * - Queue (fila de reprodução)
+ * MainActivity com ViewPager2 + TabLayout.
+ * Tabs: Library | Player | Queue
+ * Menu: Tutorial | FAQ | Sincronizar
  */
 class MainActivity : AppCompatActivity() {
 
-    private val viewModel: PlayerViewModel by viewModels()
-
-    private val permissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        val allGranted = permissions.entries.all { it.value }
-        if (allGranted) {
-            viewModel.scanLibrary()
-        } else {
-            Toast.makeText(this, "Storage permission needed to scan music", Toast.LENGTH_LONG).show()
-        }
-    }
+    private lateinit var viewPager: ViewPager2
+    private lateinit var tabLayout: TabLayout
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        setupViewPager()
-        checkPermissions()
-    }
-
-    private fun setupViewPager() {
-        val viewPager = findViewById<ViewPager2>(R.id.viewPager)
-        val tabLayout = findViewById<TabLayout>(R.id.tabLayout)
+        viewPager = findViewById(R.id.viewPager)
+        tabLayout = findViewById(R.id.tabLayout)
 
         viewPager.adapter = object : FragmentStateAdapter(this) {
-            override fun getItemCount() = 3
-            override fun createFragment(position: Int): Fragment {
-                return when (position) {
+            override fun getItemCount(): Int = 3
+            override fun createFragment(position: Int): Fragment =
+                when (position) {
                     0 -> LibraryFragment()
                     1 -> PlayerFragment()
                     2 -> QueueFragment()
-                    else -> throw IllegalStateException()
+                    else -> LibraryFragment()
                 }
-            }
         }
 
         TabLayoutMediator(tabLayout, viewPager) { tab, position ->
@@ -73,23 +53,45 @@ class MainActivity : AppCompatActivity() {
                 else -> ""
             }
         }.attach()
+
+        // Começa na aba Player (índice 1)
+        viewPager.currentItem = 1
     }
 
-    private fun checkPermissions() {
-        val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            arrayOf(Manifest.permission.READ_MEDIA_AUDIO)
-        } else {
-            arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
-        }
+    override fun onCreateOptionsMenu(menu: Menu?): Boolean {
+        menuInflater.inflate(R.menu.main_menu, menu)
+        return true
+    }
 
-        val needsRequest = permissions.any {
-            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        return when (item.itemId) {
+            R.id.menu_tutorial -> {
+                openHtmlPopup("Tutorial", HtmlPopupActivity.ASSET_TUTORIAL)
+                true
+            }
+            R.id.menu_faq -> {
+                openHtmlPopup("FAQ", HtmlPopupActivity.ASSET_FAQ)
+                true
+            }
+            R.id.menu_sync -> {
+                // Trigger sync - chama o LibraryFragment pra sincronizar
+                Toast.makeText(this, "Sincronizando biblioteca...", Toast.LENGTH_SHORT).show()
+                // TODO: broadcast ou callback pro LibraryFragment
+                true
+            }
+            R.id.menu_settings -> {
+                Toast.makeText(this, "Configurações em breve!", Toast.LENGTH_SHORT).show()
+                true
+            }
+            else -> super.onOptionsItemSelected(item)
         }
+    }
 
-        if (needsRequest) {
-            permissionLauncher.launch(permissions)
-        } else {
-            viewModel.scanLibrary()
+    private fun openHtmlPopup(title: String, asset: String) {
+        val intent = Intent(this, HtmlPopupActivity::class.java).apply {
+            putExtra(HtmlPopupActivity.EXTRA_TITLE, title)
+            putExtra(HtmlPopupActivity.EXTRA_HTML_ASSET, asset)
         }
+        startActivity(intent)
     }
 }

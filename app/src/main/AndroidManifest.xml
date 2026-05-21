@@ -20,17 +20,28 @@
         android:theme="@style/Theme.Material3.Dark.NoActionBar"
         android:requestLegacyExternalStorage="true">
 
+        <!-- Onboarding: tela inicial de boas-vindas -->
         <activity
-            android:name=".ui.MainActivity"
+            android:name=".ui.onboarding.OnboardingActivity"
             android:exported="true"
-            android:launchMode="singleTop">
+            android:theme="@style/Theme.Material3.Dark.NoActionBar">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
-        <!-- REMOVIDO: PlayerActivity (estava criando segundo player) -->
+        <!-- Main Activity -->
+        <activity
+            android:name=".ui.MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop" />
+
+        <!-- HTML Popup para tutoriais/FAQs -->
+        <activity
+            android:name=".ui.popup.HtmlPopupActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Material3.Dark.NoActionBar" />
 
         <!-- Playback Service em foreground -->
         <service
@@ -43,7 +54,7 @@
             </intent-filter>
         </service>
 
-        <!-- Receiver para controles de mídia (headset, notificação) -->
+        <!-- Receiver para controles de mídia -->
         <receiver
             android:name="androidx.media.session.MediaButtonReceiver"
             android:exported="true">

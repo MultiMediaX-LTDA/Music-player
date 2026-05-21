@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tutorial - Jammer</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1A1A1A;
+            color: #E0E0E0;
+            line-height: 1.6;
+            padding: 16px;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        h1 { color: #D4A574; border-bottom: 2px solid #D4A574; padding-bottom: 8px; }
+        h2 { color: #D4A574; margin-top: 24px; }
+        .step {
+            background: #2A2A2A;
+            border-radius: 8px;
+            padding: 16px;
+            margin: 12px 0;
+            border-left: 4px solid #D4A574;
+        }
+        .step-number {
+            display: inline-block;
+            background: #D4A574;
+            color: #1A1A1A;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 28px;
+            font-weight: bold;
+            margin-right: 8px;
+        }
+        code {
+            background: #333;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            color: #4ECDC4;
+        }
+        .tip {
+            background: #2A3A2A;
+            border: 1px solid #4CAF50;
+            border-radius: 8px;
+            padding: 12px;
+            margin: 12px 0;
+        }
+        .tip::before { content: "💡 Dica: "; color: #4CAF50; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>🎵 Bem-vindo ao Jammer</h1>
+    <p>Jammer é um player de música <strong>livre, sem rastreamento e sem anúncios</strong>. Aqui está como usar:</p>
+
+    <h2>Primeiros Passos</h2>
+
+    <div class="step">
+        <span class="step-number">1</span>
+        <strong>Sincronize sua biblioteca</strong>
+        <p>Na aba <em>Library</em>, toque no botão de sincronizar (🔄) para escanear suas músicas. No modo automático, isso acontece sozinho.</p>
+    </div>
+
+    <div class="step">
+        <span class="step-number">2</span>
+        <strong>Toque uma música</strong>
+        <p>Toque em qualquer música da lista. O Jammer abre o player com controles de play/pause, seek e próxima/anterior.</p>
+    </div>
+
+    <div class="step">
+        <span class="step-number">3</span>
+        <strong>Gerencie a fila</strong>
+        <p>Na aba <em>Queue</em>, veja o que está por vir. Toque e segure uma música pra remover da fila.</p>
+    </div>
+
+    <h2>Formatos Suportados</h2>
+    <p>MP3, FLAC, OGG, WAV, M4A, AAC, WMA, MIDI, e mais via FFmpeg.</p>
+
+    <div class="tip">
+        Arquivos <code>.lrc</code> com o mesmo nome da música são detectados automaticamente para letras sincronizadas.
+    </div>
+
+    <h2>Atalhos</h2>
+    <ul>
+        <li><strong>Busca:</strong> Digite na barra de busca da Library</li>
+        <li><strong>Notificação:</strong> Controles na barra de notificações mesmo com app fechado</li>
+        <li><strong>Shuffle:</strong> Em breve na aba Queue</li>
+    </ul>
+
+    <p style="text-align:center; margin-top:32px; color:#888;">
+        Jammer v1.0-Tidal • <a href="https://github.com/AndroidKimyona/Music-player" style="color:#D4A574;">GitHub</a>
+    </p>
+</body>
+</html>
