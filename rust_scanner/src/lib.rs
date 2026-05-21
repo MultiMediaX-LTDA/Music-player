@@ -5,7 +5,7 @@ use lofty::read_from_path;
 use lofty::file::{TaggedFileExt, AudioFile};
 use lofty::tag::Accessor;
 use serde::Serialize;
-
+use rayon::prelude::*;
 
 #[derive(Serialize)]
 pub struct Track {
@@ -35,21 +35,24 @@ pub extern "C" fn Java_android_kimyona_jammer_RustBridge_scanDirectory(
 }
 
 fn scan_directory(dir: &str) -> Vec<Track> {
-    let mut tracks = Vec::new();
-
-    for entry in WalkDir::new(dir)
-        .follow_links(true)
-        .max_depth(5)
+    // Coleta todos os caminhos válidos primeiro (sequencial, pois WalkDir não é Send)
+    let paths: Vec<_> = WalkDir::new(dir)
+        .follow_links(false)        // NÃO segue symlinks → evita loops e pastas estranhas
+        .max_depth(3)              // Reduz profundidade → não entra em subpastas infinitas
         .into_iter()
         .filter_map(|e| e.ok())
-    {
-        let path = entry.path();
-        if is_audio_file(path) {
-            if let Ok(track) = parse_track(path) {
-                tracks.push(track);
-            }
-        }
-    }
+        .filter(|e| {
+            let p = e.path();
+            is_audio_file(p) && is_reasonable_size(p)
+        })
+        .map(|e| e.path().to_path_buf())
+        .collect();
+
+    // Processa em paralelo usando todos os núcleos do processador
+    let tracks: Vec<Track> = paths
+        .par_iter()
+        .filter_map(|path| parse_track(path).ok())
+        .collect();
 
     tracks
 }
@@ -63,6 +66,16 @@ fn is_audio_file(path: &Path) -> bool {
     matches!(ext.as_str(), 
         "mp3" | "flac" | "ogg" | "opus" | "m4a" | "aac" | "wma" | "wav" | "midi" | "mid"
     )
+}
+
+/// Ignora arquivos vazios ou muito grandes (provavelmente vídeos com extensão errada)
+fn is_reasonable_size(path: &Path) -> bool {
+    if let Ok(meta) = std::fs::metadata(path) {
+        let size = meta.len();
+        size > 1024 && size < 200_000_000  // Entre 1KB e 200MB
+    } else {
+        false
+    }
 }
 
 fn parse_track(path: &Path) -> Result<Track, Box<dyn std::error::Error>> {
