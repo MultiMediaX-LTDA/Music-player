@@ -8,7 +8,6 @@ import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.SeekBar
 import android.widget.TextView
-import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import android.kimyona.jammer.R
@@ -16,8 +15,7 @@ import android.kimyona.jammer.ui.viewmodel.PlayerViewModel
 
 /**
  * Fragment do player em tela cheia.
- * Corrigido: agora mostra UI mesmo sem track, usa findViewById pros tempos,
- * e tem estado vazio decente.
+ * CORRIGIDO: findViewById para todos os views, estado vazio funcional.
  */
 class PlayerFragment : Fragment() {
 
@@ -46,7 +44,7 @@ class PlayerFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        // Bind de TODOS os views pelo ID correto do XML
+        // CORREÇÃO: findViewById com R.id.XXX (não findViewWithTag!)
         ivCover = view.findViewById(R.id.ivCover)
         tvTitle = view.findViewById(R.id.tvTitle)
         tvArtist = view.findViewById(R.id.tvArtist)
@@ -57,7 +55,7 @@ class PlayerFragment : Fragment() {
         btnPrev = view.findViewById(R.id.btnPrev)
         btnNext = view.findViewById(R.id.btnNext)
 
-        // Estado inicial: vazio, mas visível
+        // Estado inicial vazio
         showEmptyState()
 
         // Observa track atual
@@ -76,13 +74,21 @@ class PlayerFragment : Fragment() {
             )
         }
 
-        // Observa posição — atualiza seekbar
+        // Observa posição — atualiza seekbar e tempos
         viewModel.currentPosition.observe(viewLifecycleOwner) { posMs ->
             if (!isSeeking) {
                 val duration = viewModel.getDuration()
                 if (duration > 0) {
                     seekBar.max = duration.toInt()
                     seekBar.progress = posMs.toInt()
+                    tvTotalTime.text = formatTime(duration)
+                } else {
+                    val trackDuration = viewModel.currentTrack.value?.durationMs ?: 0
+                    if (trackDuration > 0) {
+                        seekBar.max = trackDuration.toInt()
+                        seekBar.progress = posMs.toInt()
+                        tvTotalTime.text = formatTime(trackDuration)
+                    }
                 }
                 tvCurrentTime.text = formatTime(posMs)
             }
@@ -113,11 +119,11 @@ class PlayerFragment : Fragment() {
 
     private fun showEmptyState() {
         tvTitle.text = "No track playing"
-        tvArtist.text = "Tap a song from Library"
+        tvArtist.text = "Select a song from Library"
         ivCover.setImageResource(R.drawable.album_placeholder_vinyl)
-        tvCurrentTime.text = formatTime(0)
-        tvTotalTime.text = formatTime(0)
-        seekBar.max = 0
+        tvCurrentTime.text = "0:00"
+        tvTotalTime.text = "0:00"
+        seekBar.max = 100
         seekBar.progress = 0
         seekBar.isEnabled = false
         btnPlayPause.isEnabled = false
@@ -134,14 +140,13 @@ class PlayerFragment : Fragment() {
         btnPrev.isEnabled = true
         btnNext.isEnabled = true
 
-        // Atualiza duration total quando track muda
         val duration = viewModel.getDuration()
         if (duration > 0) {
             seekBar.max = duration.toInt()
             tvTotalTime.text = formatTime(duration)
-        } else {
-            tvTotalTime.text = formatTime(track.durationMs)
+        } else if (track.durationMs > 0) {
             seekBar.max = track.durationMs.toInt()
+            tvTotalTime.text = formatTime(track.durationMs)
         }
     }
 

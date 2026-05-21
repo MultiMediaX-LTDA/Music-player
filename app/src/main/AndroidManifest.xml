@@ -30,9 +30,7 @@
             </intent-filter>
         </activity>
 
-        <activity
-            android:name=".PlayerActivity"
-            android:exported="false" />
+        <!-- REMOVIDO: PlayerActivity (estava criando segundo player) -->
 
         <!-- Playback Service em foreground -->
         <service
