@@ -31,7 +31,7 @@ pub extern "C" fn Java_android_kimyona_jammer_RustBridge_scanDirectory(
     CString::new(json).unwrap().into_raw()
 }
 
-fn scan_directory(dir: &str) -> Vec<<Track> {
+fn scan_directory(dir: &str) -> Vec<Track> {
     let mut tracks = Vec::new();
     
     for entry in WalkDir::new(dir)
@@ -62,7 +62,7 @@ fn is_audio_file(path: &Path) -> bool {
     )
 }
 
-fn parse_track(path: &Path) -> Result<<Track, Box<dyn std::error::Error>> {
+fn parse_track(path: &Path) -> Result<Track, Box<dyn std::error::Error>> {
     let tagged_file = read_from_path(path)?;
     
     let tag = tagged_file.primary_tag()
