@@ -1,10 +1,11 @@
 package android.kimyona.jammer
 
 import android.app.Application
+import android.kimyona.jammer.core.crash.CrashReporter
 import android.kimyona.jammer.data.JammerDatabase
 
 /**
- * Application class — inicializa banco e outras dependências globais.
+ * Application class — inicializa banco, crash reporter e outras dependências globais.
  */
 class JammerApp : Application() {
 
@@ -14,6 +15,7 @@ class JammerApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        // Inicializações futuras: crash reporter, tema, etc.
+        // Inicializa crash reporter (privacy-respecting)
+        CrashReporter(this).install()
     }
 }

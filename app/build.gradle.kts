@@ -44,6 +44,9 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    // === FIX: Garante que as .so do Rust vão pro APK ===
+    sourceSets["main"].jniLibs.srcDir("src/main/jniLibs")
 }
 
 dependencies {
@@ -66,11 +69,6 @@ dependencies {
 
     // Media (compat para notificação)
     implementation("androidx.media:media:1.7.0")
-
-    // ExoPlayer (playback) - usando media3 que você já tem
-    // implementation("androidx.media3:media3-exoplayer:1.2.1")
-    // implementation("androidx.media3:media3-session:1.2.1")
-    // implementation("androidx.media3:media3-ui:1.2.1")
 
     // Android Core
     implementation("androidx.core:core-ktx:1.12.0")

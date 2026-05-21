@@ -36,11 +36,16 @@ class QueueFragment : Fragment() {
 
         adapter = TrackAdapter { track ->
             // Toca a partir dessa posição na fila
+            viewModel.playTrack(track)
         }
 
         recyclerView.layoutManager = LinearLayoutManager(requireContext())
         recyclerView.adapter = adapter
 
-        // TODO: observar fila do banco/service
+        // Observa todas as tracks como "fila" por enquanto
+        // No futuro: usar QueueDao específico
+        viewModel.allTracks.observe(viewLifecycleOwner) { tracks ->
+            adapter.submitList(tracks)
+        }
     }
 }

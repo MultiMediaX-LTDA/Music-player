@@ -7,11 +7,13 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
+import android.os.Binder
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.support.v4.media.MediaBrowserCompat
 import android.support.v4.media.MediaDescriptionCompat
-import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
 import android.util.Log
@@ -26,7 +28,6 @@ import com.google.android.exoplayer2.Player
 import com.google.android.exoplayer2.audio.AudioAttributes
 import com.google.android.exoplayer2.ext.mediasession.MediaSessionConnector
 import com.google.android.exoplayer2.ext.mediasession.TimelineQueueNavigator
-import com.google.android.exoplayer2.ui.PlayerNotificationManager
 import android.kimyona.jammer.R
 import android.kimyona.jammer.ui.MainActivity
 import kotlinx.coroutines.*
@@ -42,7 +43,19 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
         const val CHANNEL_ID = "jammer_playback_channel"
         const val NOTIFICATION_ID = 1
         const val TAG = "JammerService"
+        const val ACTION_PLAY_SINGLE = "PLAY_SINGLE"
+        const val ACTION_PLAY_LIST = "PLAY_LIST"
+        const val ACTION_TOGGLE = "TOGGLE"
+        const val ACTION_SKIP_NEXT = "SKIP_NEXT"
+        const val ACTION_SKIP_PREV = "SKIP_PREVIOUS"
+        const val ACTION_SEEK = "SEEK"
     }
+
+    // Binder para a Activity/ViewModel se conectar
+    inner class LocalBinder : Binder() {
+        fun getService(): JammerPlaybackService = this@JammerPlaybackService
+    }
+    private val binder = LocalBinder()
 
     private lateinit var exoPlayer: ExoPlayer
     private lateinit var mediaSession: MediaSessionCompat
@@ -54,6 +67,10 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
     private var currentQueue: List<MediaItem> = emptyList()
     private var currentIndex: Int = 0
 
+    // Handler pra atualizar posição
+    private val positionHandler = Handler(Looper.getMainLooper())
+    private var positionRunnable: Runnable? = null
+
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "Service created")
@@ -61,6 +78,34 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
         createNotificationChannel()
         initializePlayer()
         initializeMediaSession()
+        startPositionUpdates()
+    }
+
+    override fun onBind(intent: Intent?): IBinder {
+        // Retorna nosso binder pra ViewModel controlar diretamente
+        return binder
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            ACTION_PLAY_SINGLE -> {
+                val path = intent.getStringExtra("path") ?: return START_NOT_STICKY
+                playSingle(path)
+            }
+            ACTION_PLAY_LIST -> {
+                val paths = intent.getStringArrayListExtra("paths") ?: return START_NOT_STICKY
+                val startIndex = intent.getIntExtra("startIndex", 0)
+                playTracks(paths, startIndex)
+            }
+            ACTION_TOGGLE -> togglePlayPause()
+            ACTION_SKIP_NEXT -> skipToNext()
+            ACTION_SKIP_PREV -> skipToPrevious()
+            ACTION_SEEK -> {
+                val pos = intent.getLongExtra("positionMs", 0)
+                seekTo(pos)
+            }
+        }
+        return START_NOT_STICKY
     }
 
     private fun initializePlayer() {
@@ -85,6 +130,11 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
 
             override fun onPlayerError(error: PlaybackException) {
                 Log.e(TAG, "Player error: ${error.message}")
+            }
+
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                currentIndex = exoPlayer.currentMediaItemIndex
+                updateNotification()
             }
         })
     }
@@ -123,9 +173,19 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
         sessionToken = mediaSession.sessionToken
     }
 
+    private fun startPositionUpdates() {
+        positionRunnable = object : Runnable {
+            override fun run() {
+                // Nada a fazer aqui — a ViewModel puxa via getCurrentPosition()
+                // Mas se quisermos notificar via broadcast no futuro, é aqui
+                positionHandler.postDelayed(this, 1000)
+            }
+        }
+        positionHandler.postDelayed(positionRunnable!!, 1000)
+    }
+
     /**
      * Inicia playback com uma lista de paths.
-     * Chamado pela Activity ou por intents externos.
      */
     fun playTracks(paths: List<String>, startIndex: Int = 0) {
         currentQueue = paths.map { path ->
@@ -179,8 +239,9 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
     }
 
     fun getCurrentPosition(): Long = exoPlayer.currentPosition
-    fun getDuration(): Long = exoPlayer.duration
+    fun getDuration(): Long = if (exoPlayer.duration > 0) exoPlayer.duration else 0L
     fun isPlaying(): Boolean = exoPlayer.isPlaying
+    fun getCurrentTrackPath(): String? = currentQueue.getOrNull(currentIndex)?.mediaId
 
     /**
      * Atualiza a notificação com estado atual.
@@ -290,7 +351,6 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
         parentId: String,
         result: Result<MutableList<MediaBrowserCompat.MediaItem>>
     ) {
-        // TODO: expor playlists/folders pro Android Auto / Wear OS
         result.sendResult(mutableListOf())
     }
 
@@ -304,6 +364,7 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
 
     override fun onDestroy() {
         super.onDestroy()
+        positionRunnable?.let { positionHandler.removeCallbacks(it) }
         mediaSession.release()
         exoPlayer.release()
         serviceJob.cancel()
