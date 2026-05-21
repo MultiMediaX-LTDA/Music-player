@@ -5,9 +5,9 @@ import android.widget.Button
 import android.widget.SeekBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
-import androidx.media3.common.MediaItem
-import androidx.media3.common.Player
-import androidx.media3.exoplayer.ExoPlayer
+import com.google.android.exoplayer2.MediaItem
+import com.google.android.exoplayer2.Player
+import com.google.android.exoplayer2.ExoPlayer
 
 class PlayerActivity : AppCompatActivity() {
 
@@ -51,9 +51,11 @@ class PlayerActivity : AppCompatActivity() {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {}
             override fun onStartTrackingTouch(seekBar: SeekBar?) {}
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
-                player?.let {
-                    val pos = (it.duration * seekBar!!.progress / 100)
-                    it.seekTo(pos)
+                seekBar?.let { sb ->
+                    player?.let { p ->
+                        val pos = (p.duration * sb.progress / 100)
+                        p.seekTo(pos)
+                    }
                 }
             }
         })
@@ -74,7 +76,7 @@ class PlayerActivity : AppCompatActivity() {
                     seekBar.max = 100
                 }
             }
-            override fun onIsPlayingChanged(playing: Boolean) {
+            override fun onIsPlayingChanged(playing: Booleanean) {
                 isPlaying = playing
                 btnPlayPause.text = if (playing) "⏸" else "▶"
             }
