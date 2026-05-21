@@ -2,7 +2,7 @@ use std::path::Path;
 
 use lofty::file::{AudioFile, TaggedFileExt};
 use lofty::probe::Probe;
-use lofty::tag::ItemKey;
+use lofty::tag::{ItemKey, Accessor};
 use serde::{Deserialize, Serialize};
 use walkdir::WalkDir;
 
