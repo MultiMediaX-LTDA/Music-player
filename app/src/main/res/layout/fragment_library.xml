@@ -4,14 +4,14 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@color/skeu_metal_dark">
+    android:background="@drawable/skeu_metal_dark">
 
     <SearchView
         android:id="@+id/searchView"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:queryHint="Search tracks..."
-        android:background="@color/skeu_wood_light" />
+        android:background="@drawable/skeu_wood_light" />
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recyclerLibrary"

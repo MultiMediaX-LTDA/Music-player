@@ -9,7 +9,7 @@
         android:id="@+id/tabLayout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@color/skeu_wood_dark" />
+        android:background="@drawable/skeu_wood_dark" />
 
     <androidx.viewpager2.widget.ViewPager2
         android:id="@+id/viewPager"

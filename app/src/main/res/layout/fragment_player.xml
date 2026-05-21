@@ -6,7 +6,7 @@
     android:orientation="vertical"
     android:gravity="center"
     android:padding="24dp"
-    android:background="@color/skeu_vinyl_black">
+    android:background="@drawable/skeu_vinyl_black">
 
     <ImageView
         android:id="@+id/ivCover"
