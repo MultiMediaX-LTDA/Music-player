@@ -39,7 +39,7 @@ fn scan_directory(dir: &str) -> Vec<TrackInfo> {
     {
         let path = entry.path();
         if path.is_file() {
-            if let Ok(Some(mut probe)) = Probe::open(path) {
+            if let Ok(mut probe) = Probe::open(path) {
                 if let Ok(tagged_file) = probe.read() {
                     let properties = tagged_file.properties();
                     let tag = tagged_file.primary_tag();
