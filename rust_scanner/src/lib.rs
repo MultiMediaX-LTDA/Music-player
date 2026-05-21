@@ -1,7 +1,7 @@
 use std::ffi::{CStr, CString, c_char};
 use std::path::Path;
 use walkdir::WalkDir;
-use lofty::{Probe, TaggedFileExt};
+use lofty::read_from_path;
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -31,7 +31,7 @@ pub extern "C" fn Java_android_kimyona_jammer_RustBridge_scanDirectory(
     CString::new(json).unwrap().into_raw()
 }
 
-fn scan_directory(dir: &str) -> Vec<Track> {
+fn scan_directory(dir: &str) -> Vec<<Track> {
     let mut tracks = Vec::new();
     
     for entry in WalkDir::new(dir)
@@ -62,19 +62,20 @@ fn is_audio_file(path: &Path) -> bool {
     )
 }
 
-fn parse_track(path: &Path) -> Result<Track, Box<dyn std::error::Error>> {
-    let tagged_file = Probe::open(path)?.read()?;
+fn parse_track(path: &Path) -> Result<<Track, Box<dyn std::error::Error>> {
+    let tagged_file = read_from_path(path)?;
+    
     let tag = tagged_file.primary_tag()
         .or_else(|| tagged_file.first_tag())
-        .ok_or("No tags")?;
+        .ok_or("No tags found")?;
     
     let props = tagged_file.properties();
     
     Ok(Track {
         path: path.to_string_lossy().to_string(),
-        title: tag.title().as_deref().unwrap_or("Unknown").to_string(),
-        artist: tag.artist().as_deref().unwrap_or("Unknown").to_string(),
-        album: tag.album().as_deref().unwrap_or("Unknown").to_string(),
+        title: tag.title().as_deref().unwrap_or("Unknown Title").to_string(),
+        artist: tag.artist().as_deref().unwrap_or("Unknown Artist").to_string(),
+        album: tag.album().as_deref().unwrap_or("Unknown Album").to_string(),
         duration_ms: props.duration().as_millis() as u32,
         format: path.extension().and_then(|e| e.to_str()).unwrap_or("unknown").to_uppercase(),
     })
