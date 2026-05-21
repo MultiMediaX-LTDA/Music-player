@@ -18,15 +18,16 @@ local.properties
 .DS_Store
 Thumbs.db
 
-# APKs gerados (você baixa do GitHub Actions)
+# APK
 *.apk
 *.aab
 
-# Crash reports local (o app gera, mas não precisa subir)
+# Local crash reports
 app/src/main/assets/crash-reports/
 
-# Check command
+# Some commands
 check.py
+*.sh
 
 # Jus some ideas
 le-ideas.txt
