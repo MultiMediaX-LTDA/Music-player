@@ -1,6 +1,7 @@
 package android.kimyona.jammer.core.media
 
 import android.kimyona.jammer.data.entity.Track
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -27,8 +28,11 @@ class RustBridge {
             val results = mutableListOf<Track>()
 
             dirs.forEach { dir ->
+                Log.d("JammerScanner", "Scanning directory: $dir")
                 val json = nativeScanDirectory(dir)
+                Log.d("JammerScanner", "Raw JSON from Rust: $json")
                 val tracks = parseJsonTracks(json, exclude.toSet())
+                Log.d("JammerScanner", "Parsed ${tracks.size} tracks from $dir")
                 results.addAll(tracks)
             }
 
@@ -60,7 +64,7 @@ class RustBridge {
                 ))
             }
         } catch (e: Exception) {
-            android.util.Log.e("RustBridge", "Parse error: ${e.message}")
+            Log.e("RustBridge", "Parse error: ${e.message}")
         }
 
         return tracks

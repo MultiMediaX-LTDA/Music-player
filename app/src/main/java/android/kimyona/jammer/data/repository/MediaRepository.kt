@@ -46,16 +46,24 @@ class MediaRepository(
         val seenPaths = mediaStoreTracks.map { it.path }.toSet()
         val extraPaths = getExtraScanPaths()
 
+        Log.d(TAG, "Extra scan paths: $extraPaths")
+        Log.d(TAG, "Already seen ${seenPaths.size} paths from MediaStore")
+
         if (extraPaths.isNotEmpty()) {
             emit(ScanProgress.RustScanning)
             val rustTracks = withContext(Dispatchers.IO) {
                 rustBridge.scanDirectories(extraPaths.toTypedArray(), seenPaths.toTypedArray())
             }
+            Log.d(TAG, "Rust found ${rustTracks.size} extra tracks")
             db.trackDao().insertAll(rustTracks)
             emit(ScanProgress.RustDone(rustTracks.size))
+        } else {
+            Log.d(TAG, "No extra paths to scan with Rust")
         }
 
-        emit(ScanProgress.Complete(db.trackDao().count()))
+        val total = db.trackDao().count()
+        Log.d(TAG, "=== SCAN COMPLETE: $total total tracks ===")
+        emit(ScanProgress.Complete(total))
     }.flowOn(Dispatchers.IO)
 
     private fun scanMediaStore(): List<Track> {
@@ -114,6 +122,9 @@ class MediaRepository(
         val paths = mutableListOf<String>()
         val extDir = android.os.Environment.getExternalStorageDirectory()
 
+        Log.d(TAG, "External storage dir: ${extDir.absolutePath}")
+        Log.d(TAG, "External storage exists? ${extDir.exists()}")
+
         // Pastas comuns que MediaStore ignora ou perde
         val candidates = listOf(
             "Download",
@@ -126,11 +137,14 @@ class MediaRepository(
 
         candidates.forEach { candidate ->
             val dir = java.io.File(extDir, candidate)
-            if (dir.exists() && dir.isDirectory) {
+            val exists = dir.exists() && dir.isDirectory
+            Log.d(TAG, "Checking $candidate: exists=$exists, path=${dir.absolutePath}")
+            if (exists) {
                 paths.add(dir.absolutePath)
             }
         }
 
+        Log.d(TAG, "Final extra paths: $paths")
         return paths
     }
 

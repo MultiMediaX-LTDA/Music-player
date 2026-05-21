@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.os.IBinder
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
@@ -71,17 +72,31 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
      */
     fun scanLibrary() {
         viewModelScope.launch {
+            Log.d("JammerScanner", "=== scanLibrary() started ===")
+
             repository.scanLibrary().collect { progress ->
+                Log.d("JammerScanner", "Progress: $progress")
                 _scanProgress.value = when (progress) {
-                    is MediaRepository.ScanProgress.Starting -> "Starting scan..."
-                    is MediaRepository.ScanProgress.MediaStoreDone ->
+                    is MediaRepository.ScanProgress.Starting -> {
+                        Log.d("JammerScanner", "Starting scan...")
+                        "Starting scan..."
+                    }
+                    is MediaRepository.ScanProgress.MediaStoreDone -> {
+                        Log.d("JammerScanner", "MediaStore found ${progress.count} tracks")
                         "Found ${progress.count} tracks from MediaStore"
-                    is MediaRepository.ScanProgress.RustScanning ->
+                    }
+                    is MediaRepository.ScanProgress.RustScanning -> {
+                        Log.d("JammerScanner", "Rust scanner starting...")
                         "Scanning extra folders with Rust..."
-                    is MediaRepository.ScanProgress.RustDone ->
+                    }
+                    is MediaRepository.ScanProgress.RustDone -> {
+                        Log.d("JammerScanner", "Rust found ${progress.count} extra tracks")
                         "Found ${progress.count} extra tracks"
-                    is MediaRepository.ScanProgress.Complete ->
+                    }
+                    is MediaRepository.ScanProgress.Complete -> {
+                        Log.d("JammerScanner", "=== Complete! ${progress.total} tracks total ===")
                         "Done! ${progress.total} tracks total"
+                    }
                 }
             }
         }
