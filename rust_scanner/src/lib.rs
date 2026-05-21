@@ -2,7 +2,7 @@ use std::path::Path;
 
 use lofty::file::{AudioFile, TaggedFileExt};
 use lofty::probe::Probe;
-use lofty::tag::ItemKey;
+use lofty::tag::{Accessor, ItemKey};
 use serde::{Deserialize, Serialize};
 use walkdir::WalkDir;
 
@@ -74,7 +74,6 @@ pub extern "system" fn Java_android_kimyona_jammer_core_media_RustBridge_nativeS
     _class: jni::objects::JClass,
     dir: jni::objects::JString,
 ) -> jni::sys::jstring {
-    // Convert JString → Rust String safely
     let dir_str: String = match env.get_string(&dir) {
         Ok(s) => s.into(),
         Err(_) => return std::ptr::null_mut(),
@@ -87,7 +86,6 @@ pub extern "system" fn Java_android_kimyona_jammer_core_media_RustBridge_nativeS
         Err(_) => "[]".to_string(),
     };
 
-    // Convert Rust String → JString (Java)
     match env.new_string(&json) {
         Ok(jstring) => jstring.into_raw(),
         Err(_) => std::ptr::null_mut(),
