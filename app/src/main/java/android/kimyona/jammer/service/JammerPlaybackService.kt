@@ -35,8 +35,7 @@ import kotlinx.coroutines.*
 
 /**
  * Serviço de playback em foreground.
- * CORRIGIDO: Notificação com controles funcionando, PlaybackState atualizado,
- * MediaButtonReceiver configurado corretamente.
+ * CORRIGIDO v3: MediaMetadata com .toString(), ic_music_note removido.
  */
 class JammerPlaybackService : MediaBrowserServiceCompat() {
 
@@ -77,7 +76,6 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
         initializePlayer()
         initializeMediaSession()
 
-        // Start foreground imediatamente para evitar ANR no Android 12+
         startForeground(NOTIFICATION_ID, buildEmptyNotification())
         startPositionUpdates()
     }
@@ -87,7 +85,6 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // IMPORTANTE: MediaButtonReceiver precisa processar intents de media buttons
         MediaButtonReceiver.handleIntent(mediaSession, intent)
 
         when (intent?.action) {
@@ -158,7 +155,6 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
             isActive = true
         }
 
-        // Callback para responder a media buttons (headset, notificação, etc)
         mediaSession.setCallback(object : MediaSessionCompat.Callback() {
             override fun onPlay() {
                 exoPlayer.play()
@@ -187,8 +183,8 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
                     return currentQueue.getOrNull(windowIndex)?.let {
                         MediaDescriptionCompat.Builder()
                             .setMediaId(it.mediaId)
-                            .setTitle(it.mediaMetadata.title)
-                            .setSubtitle(it.mediaMetadata.artist)
+                            .setTitle(it.mediaMetadata.title?.toString())
+                            .setSubtitle(it.mediaMetadata.artist?.toString())
                             .build()
                     } ?: MediaDescriptionCompat.Builder().setTitle("Jammer").build()
                 }
@@ -224,9 +220,9 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
         val currentItem = currentQueue.getOrNull(currentIndex)
         val metadata = android.support.v4.media.MediaMetadataCompat.Builder()
             .putString(android.support.v4.media.MediaMetadataCompat.METADATA_KEY_TITLE,
-                currentItem?.mediaMetadata?.title ?: "Unknown")
+                currentItem?.mediaMetadata?.title?.toString() ?: "Unknown")
             .putString(android.support.v4.media.MediaMetadataCompat.METADATA_KEY_ARTIST,
-                currentItem?.mediaMetadata?.artist ?: "Unknown")
+                currentItem?.mediaMetadata?.artist?.toString() ?: "Unknown")
             .putLong(android.support.v4.media.MediaMetadataCompat.METADATA_KEY_DURATION,
                 exoPlayer.duration)
             .build()
@@ -313,7 +309,7 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Jammer")
             .setContentText("Ready to play")
-            .setSmallIcon(R.drawable.ic_music_note)
+            .setSmallIcon(android.R.drawable.ic_media_play)  // Ícone do sistema
             .setOngoing(true)
             .build()
     }
@@ -321,9 +317,8 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
     private fun buildNotification(): Notification {
         val isPlaying = exoPlayer.isPlaying
 
-        // Actions da notificação
         val prevAction = NotificationCompat.Action(
-            R.drawable.ic_prev,
+            android.R.drawable.ic_media_previous,
             "Previous",
             MediaButtonReceiver.buildMediaButtonPendingIntent(
                 this,
@@ -333,7 +328,7 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
 
         val playPauseAction = if (isPlaying) {
             NotificationCompat.Action(
-                R.drawable.ic_pause,
+                android.R.drawable.ic_media_pause,
                 "Pause",
                 MediaButtonReceiver.buildMediaButtonPendingIntent(
                     this,
@@ -342,7 +337,7 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
             )
         } else {
             NotificationCompat.Action(
-                R.drawable.ic_play,
+                android.R.drawable.ic_media_play,
                 "Play",
                 MediaButtonReceiver.buildMediaButtonPendingIntent(
                     this,
@@ -352,7 +347,7 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
         }
 
         val nextAction = NotificationCompat.Action(
-            R.drawable.ic_next,
+            android.R.drawable.ic_media_next,
             "Next",
             MediaButtonReceiver.buildMediaButtonPendingIntent(
                 this,
@@ -361,10 +356,9 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
         )
 
         val currentItem = currentQueue.getOrNull(currentIndex)
-        val title = currentItem?.mediaMetadata?.title ?: "Jammer"
-        val artist = currentItem?.mediaMetadata?.artist ?: "Unknown Artist"
+        val title = currentItem?.mediaMetadata?.title?.toString() ?: "Jammer"
+        val artist = currentItem?.mediaMetadata?.artist?.toString() ?: "Unknown Artist"
 
-        // Intent para abrir o app ao clicar na notificação
         val contentIntent = PendingIntent.getActivity(
             this,
             0,
@@ -375,7 +369,7 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(artist)
-            .setSmallIcon(R.drawable.ic_music_note)
+            .setSmallIcon(android.R.drawable.ic_media_play)  // Ícone do sistema
             .setLargeIcon(BitmapFactory.decodeResource(resources, R.drawable.album_placeholder_vinyl))
             .setContentIntent(contentIntent)
             .setOngoing(true)
@@ -415,7 +409,6 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
         serviceJob.cancel()
     }
 
-    // MediaBrowserServiceCompat required overrides
     override fun onGetRoot(clientPackageName: String, clientUid: Int, rootHints: Bundle?): BrowserRoot? {
         return BrowserRoot("root", null)
     }
