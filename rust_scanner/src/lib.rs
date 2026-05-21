@@ -18,7 +18,7 @@ pub struct Track {
 }
 
 #[no_mangle]
-pub extern "C" fn Java_android_kimyona_jammer_RustBridge_scanDirectory(
+pub extern "C" fn Java_android_kimyona_jammer_core_media_RustBridge_nativeScanDirectory(
     _env: *mut jni::sys::JNIEnv,
     _class: jni::sys::jclass,
     dir_ptr: *const c_char,
