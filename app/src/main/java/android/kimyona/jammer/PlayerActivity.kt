@@ -76,7 +76,7 @@ class PlayerActivity : AppCompatActivity() {
                     seekBar.max = 100
                 }
             }
-            override fun onIsPlayingChanged(playing: Booleanean) {
+            override fun onIsPlayingChanged(playing: Boolean) {
                 isPlaying = playing
                 btnPlayPause.text = if (playing) "⏸" else "▶"
             }

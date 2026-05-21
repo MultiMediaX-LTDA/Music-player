@@ -115,7 +115,7 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
                             .setTitle(it.mediaMetadata.title)
                             .setSubtitle(it.mediaMetadata.artist)
                             .build()
-                    } ?: MediaDescriptionCompat.EMPTY
+                    } ?: MediaDescriptionCompat.Builder().setTitle("Jammer").build()
                 }
             })
         }
