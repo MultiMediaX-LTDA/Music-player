@@ -11,6 +11,7 @@ import android.os.Binder
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
+import android.os.Bundle
 import android.os.Looper
 import android.support.v4.media.MediaBrowserCompat
 import android.support.v4.media.MediaMetadataCompat
@@ -319,7 +320,7 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Jammer")
             .setContentText("Ready to play")
-            .setSmallIcon(R.drawable.ic_music_note)
+            .setSmallIcon(R.drawable.ic_notification)
             .setOngoing(true)
             .setSilent(true)
             .build()
@@ -357,7 +358,7 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(mediaSession?.controller?.metadata?.getString(MediaMetadataCompat.METADATA_KEY_TITLE) ?: "Jammer")
             .setContentText(mediaSession?.controller?.metadata?.getString(MediaMetadataCompat.METADATA_KEY_ARTIST) ?: "Unknown")
-            .setSmallIcon(R.drawable.ic_music_note)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(contentIntent)
             .setOngoing(true)
             .addAction(R.drawable.ic_prev, "Previous", PendingIntent.getService(this, 1, Intent(this, JammerPlaybackService::class.java).setAction(ACTION_SKIP_PREV), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
