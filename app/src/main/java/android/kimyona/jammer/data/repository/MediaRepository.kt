@@ -1,10 +1,11 @@
 package android.kimyona.jammer.data.repository
 
-import android.kimyona.jammer.core.media.RustBridge
 import android.content.Context
+import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import android.util.Log
+import androidx.documentfile.provider.DocumentFile
 import android.kimyona.jammer.data.JammerDatabase
 import android.kimyona.jammer.data.entity.Track
 import kotlinx.coroutines.Dispatchers
@@ -16,9 +17,9 @@ import kotlinx.coroutines.withContext
 class MediaRepository(
     private val context: Context,
     private val db: JammerDatabase,
-    private val rustBridge: RustBridge
+    private val rustBridge: android.kimyona.jammer.core.media.RustBridge
 ) {
-    private val TAG = "MediaRepository"
+    private val TAG = "JammerScan"
 
     val allTracks = db.trackDao().getAll()
     val favorites = db.trackDao().getFavorites()
@@ -26,18 +27,18 @@ class MediaRepository(
     fun scanLibrary(): Flow<ScanProgress> = flow {
         emit(ScanProgress.Starting)
 
-        val mediaStoreTracks = withContext(Dispatchers.IO) {
-            scanMediaStore()
-        }
-        emit(ScanProgress.MediaStoreDone(mediaStoreTracks.size))
+        val tracks = withContext(Dispatchers.IO) {
+            val mediaStoreTracks = scanMediaStore()
+            Log.d(TAG, "MediaStore: ${mediaStoreTracks.size} tracks")
 
-        if (mediaStoreTracks.isNotEmpty()) {
-            db.trackDao().insertAll(mediaStoreTracks)
+            if (mediaStoreTracks.isNotEmpty()) {
+                db.trackDao().insertAll(mediaStoreTracks)
+            }
+
+            mediaStoreTracks
         }
 
-        val total = db.trackDao().count()
-        Log.d(TAG, "=== SCAN COMPLETE: $total total tracks ===")
-        emit(ScanProgress.Complete(total))
+        emit(ScanProgress.Complete(tracks.size))
     }.flowOn(Dispatchers.IO)
 
     private fun scanMediaStore(): List<Track> {
@@ -56,7 +57,27 @@ class MediaRepository(
             MediaStore.Audio.Media.TRACK
         )
 
-        context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+        try {
+            val cursor = context.contentResolver.query(
+                uri,
+                projection,
+                null,
+                null,
+                MediaStore.Audio.Media.DATE_ADDED + " DESC"
+            )
+
+            if (cursor == null) {
+                Log.e(TAG, "MediaStore cursor is NULL")
+                return tracks
+            }
+
+            Log.d(TAG, "MediaStore cursor count: ${cursor.count}")
+
+            if (cursor.count == 0) {
+                cursor.close()
+                return tracks
+            }
+
             val pathIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
             val titleIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
             val artistIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
@@ -66,12 +87,10 @@ class MediaRepository(
             val yearIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.YEAR)
             val trackIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TRACK)
 
-            Log.d(TAG, "MediaStore cursor count: ${cursor.count}")
-
             while (cursor.moveToNext()) {
                 val path = cursor.getString(pathIdx) ?: continue
                 val mime = cursor.getString(mimeIdx) ?: "unknown"
-                Log.d(TAG, "Found: $path (mime: $mime)")
+                Log.d(TAG, "MediaStore: $path | mime=$mime")
 
                 val format = path.substringAfterLast('.', "UNKNOWN").uppercase()
 
@@ -86,28 +105,46 @@ class MediaRepository(
                     trackNumber = cursor.getInt(trackIdx).takeIf { it > 0 }
                 ))
             }
+            cursor.close()
+        } catch (e: Exception) {
+            Log.e(TAG, "MediaStore query failed: ${e.message}", e)
         }
 
-        Log.d(TAG, "MediaStore found ${tracks.size} tracks")
+        Log.d(TAG, "MediaStore total: ${tracks.size}")
         return tracks
     }
 
-    private fun getExtraScanPaths(): List<String> {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            return emptyList()
-        }
-        val paths = mutableListOf<String>()
-        val extDir = android.os.Environment.getExternalStorageDirectory()
-        if (!extDir.exists()) return emptyList()
+    /**
+     * Scan via SAF (Storage Access Framework) - para pastas que MediaStore ignora
+     */
+    fun scanWithSAF(treeUri: Uri): List<Track> {
+        val tracks = mutableListOf<Track>()
+        val audioExts = setOf("opus", "ogg", "mp3", "flac", "m4a", "aac", "wav", "wma", "mid", "midi")
 
-        val candidates = listOf("Download", "Music", "Documents", "DCIM")
-        candidates.forEach { candidate ->
-            val dir = java.io.File(extDir, candidate)
-            if (dir.exists() && dir.isDirectory) {
-                paths.add(dir.absolutePath)
+        val tree = DocumentFile.fromTreeUri(context, treeUri) ?: return tracks
+
+        fun scanDocument(doc: DocumentFile) {
+            if (doc.isDirectory) {
+                doc.listFiles()?.forEach { scanDocument(it) }
+            } else {
+                val ext = doc.name?.substringAfterLast('.', "")?.lowercase() ?: ""
+                if (ext in audioExts) {
+                    tracks.add(Track(
+                        path = doc.uri.toString(),
+                        title = doc.name ?: "Unknown",
+                        artist = "Unknown Artist",
+                        album = "Unknown Album",
+                        durationMs = 0L,
+                        format = ext.uppercase()
+                    ))
+                    Log.d(TAG, "SAF found: ${doc.name}")
+                }
             }
         }
-        return paths
+
+        scanDocument(tree)
+        Log.d(TAG, "SAF total: ${tracks.size}")
+        return tracks
     }
 
     fun searchTracks(query: String) = db.trackDao().search("%$query%")
