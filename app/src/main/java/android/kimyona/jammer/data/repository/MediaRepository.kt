@@ -129,8 +129,9 @@ class MediaRepository(
     /**
      * Fallback manual: escaneia pastas comuns de música no filesystem.
      * Não precisa de permissão MANAGE_EXTERNAL_STORAGE — usa paths públicos.
+     * FIX: agora é suspend para chamar MediaScanner.scanAll() corretamente.
      */
-    private fun scanManualFolders(): List<Track> {
+    private suspend fun scanManualFolders(): List<Track> {
         val commonPaths = listOf(
             "/storage/emulated/0/Music",
             "/storage/emulated/0/.Music",
