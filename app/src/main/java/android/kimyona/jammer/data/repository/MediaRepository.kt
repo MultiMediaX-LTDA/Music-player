@@ -5,6 +5,7 @@ import android.kimyona.jammer.core.media.RustBridge
 import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
+import android.os.Build
 import android.provider.MediaStore
 import android.util.Log
 import android.kimyona.jammer.data.JammerDatabase
@@ -28,6 +29,7 @@ class MediaRepository(
 
     /**
      * SCAN HÍBRIDO — Fase 1: MediaStore (instantâneo), Fase 2: Rust (background)
+     * MVP FIX: paths corrigidos para Android 13+ (API 33+)
      */
     fun scanLibrary(): Flow<ScanProgress> = flow {
         emit(ScanProgress.Starting)
@@ -41,8 +43,9 @@ class MediaRepository(
         // Salva no banco
         db.trackDao().insertAll(mediaStoreTracks)
 
-        // FASE 2: Rust — escaneia pastas específicas que MediaStore perde
-        // (Opus como .ogg, pastas de apps de download, etc.)
+        // FASE 2: Rust — escaneia pastas extras (desativado até .so estar no APK)
+        // MVP FIX: comentado para evitar crash se libjammer_scanner.so não existir
+        /*
         val seenPaths = mediaStoreTracks.map { it.path }.toSet()
         val extraPaths = getExtraScanPaths()
 
@@ -60,6 +63,7 @@ class MediaRepository(
         } else {
             Log.d(TAG, "No extra paths to scan with Rust")
         }
+        */
 
         val total = db.trackDao().count()
         Log.d(TAG, "=== SCAN COMPLETE: $total total tracks ===")
@@ -118,28 +122,30 @@ class MediaRepository(
         return tracks
     }
 
+    /**
+     * MVP FIX: paths seguros para Android 13+ (API 33+).
+     * Com Scoped Storage, MediaStore já cobre tudo. Não precisa listar pastas manualmente.
+     */
     private fun getExtraScanPaths(): List<String> {
+        // API 33+: MediaStore com READ_MEDIA_AUDIO cobre todos os formatos nativos
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            return emptyList()
+        }
+
         val paths = mutableListOf<String>()
         val extDir = android.os.Environment.getExternalStorageDirectory()
+        if (!extDir.exists()) return emptyList()
 
-        Log.d(TAG, "External storage dir: ${extDir.absolutePath}")
-        Log.d(TAG, "External storage exists? ${extDir.exists()}")
-
-        // Pastas comuns que MediaStore ignora ou perde
         val candidates = listOf(
             "Download",
-            "Telegram/Telegram Audio",
-            "WhatsApp/Media/WhatsApp Audio",
-            "DCIM",
             "Music",
-            "Documents"
+            "Documents",
+            "DCIM"
         )
 
         candidates.forEach { candidate ->
             val dir = java.io.File(extDir, candidate)
-            val exists = dir.exists() && dir.isDirectory
-            Log.d(TAG, "Checking $candidate: exists=$exists, path=${dir.absolutePath}")
-            if (exists) {
+            if (dir.exists() && dir.isDirectory) {
                 paths.add(dir.absolutePath)
             }
         }

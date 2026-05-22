@@ -21,11 +21,13 @@ import kotlinx.coroutines.launch
 /**
  * Fragment da biblioteca — lista todas as músicas.
  * Com busca em tempo real.
+ * MVP FIX: dispara scan automaticamente se banco vazio.
  */
 class LibraryFragment : Fragment() {
 
     private val viewModel: PlayerViewModel by activityViewModels()
     private lateinit var adapter: TrackAdapter
+    private var hasTriggeredScan = false
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -48,12 +50,12 @@ class LibraryFragment : Fragment() {
         recyclerView.layoutManager = LinearLayoutManager(requireContext())
         recyclerView.adapter = adapter
 
-        // Observa tracks
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.allTracks.observe(viewLifecycleOwner) { tracks ->
-                    adapter.submitList(tracks)
-                }
+        // Observa tracks — dispara scan se vazio (MVP FIX)
+        viewModel.allTracks.observe(viewLifecycleOwner) { tracks ->
+            adapter.submitList(tracks)
+            if (tracks.isNullOrEmpty() && !hasTriggeredScan) {
+                hasTriggeredScan = true
+                viewModel.scanLibrary()
             }
         }
 

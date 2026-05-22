@@ -7,6 +7,7 @@ import android.view.MenuItem
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.ViewModelProvider
 import androidx.viewpager2.adapter.FragmentStateAdapter
 import androidx.viewpager2.widget.ViewPager2
 import com.google.android.material.tabs.TabLayout
@@ -16,11 +17,13 @@ import android.kimyona.jammer.ui.fragments.LibraryFragment
 import android.kimyona.jammer.ui.fragments.PlayerFragment
 import android.kimyona.jammer.ui.fragments.QueueFragment
 import android.kimyona.jammer.ui.popup.HtmlPopupActivity
+import android.kimyona.jammer.ui.viewmodel.PlayerViewModel
 
 /**
  * MainActivity com ViewPager2 + TabLayout.
  * Tabs: Library | Player | Queue
- * Menu: Tutorial | FAQ | Sincronizar
+ * Menu: Tutorial | FAQ | Sincronizar | Configurações
+ * MVP FIX: menu_sync agora dispara scanLibrary() de verdade.
  */
 class MainActivity : AppCompatActivity() {
 
@@ -73,10 +76,11 @@ class MainActivity : AppCompatActivity() {
                 openHtmlPopup("FAQ", HtmlPopupActivity.ASSET_FAQ)
                 true
             }
+            // MVP FIX: sincronizar agora funciona
             R.id.menu_sync -> {
-                // Trigger sync - chama o LibraryFragment pra sincronizar
+                val vm = ViewModelProvider(this).get(PlayerViewModel::class.java)
+                vm.scanLibrary()
                 Toast.makeText(this, "Sincronizando biblioteca...", Toast.LENGTH_SHORT).show()
-                // TODO: broadcast ou callback pro LibraryFragment
                 true
             }
             R.id.menu_settings -> {
