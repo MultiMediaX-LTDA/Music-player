@@ -1,10 +1,7 @@
 package android.kimyona.jammer.data.repository
 
 import android.kimyona.jammer.core.media.RustBridge
-
-import android.content.ContentResolver
 import android.content.Context
-import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import android.util.Log
@@ -23,47 +20,20 @@ class MediaRepository(
 ) {
     private val TAG = "MediaRepository"
 
-    // LiveData observável pela UI
     val allTracks = db.trackDao().getAll()
     val favorites = db.trackDao().getFavorites()
 
-    /**
-     * SCAN HÍBRIDO — Fase 1: MediaStore (instantâneo), Fase 2: Rust (background)
-     * MVP FIX: paths corrigidos para Android 13+ (API 33+)
-     */
     fun scanLibrary(): Flow<ScanProgress> = flow {
         emit(ScanProgress.Starting)
 
-        // FASE 1: MediaStore — pega tudo que o Android reconhece como áudio
         val mediaStoreTracks = withContext(Dispatchers.IO) {
             scanMediaStore()
         }
         emit(ScanProgress.MediaStoreDone(mediaStoreTracks.size))
 
-        // Salva no banco
-        db.trackDao().insertAll(mediaStoreTracks)
-
-        // FASE 2: Rust — escaneia pastas extras (desativado até .so estar no APK)
-        // MVP FIX: comentado para evitar crash se libjammer_scanner.so não existir
-        /*
-        val seenPaths = mediaStoreTracks.map { it.path }.toSet()
-        val extraPaths = getExtraScanPaths()
-
-        Log.d(TAG, "Extra scan paths: $extraPaths")
-        Log.d(TAG, "Already seen ${seenPaths.size} paths from MediaStore")
-
-        if (extraPaths.isNotEmpty()) {
-            emit(ScanProgress.RustScanning)
-            val rustTracks = withContext(Dispatchers.IO) {
-                rustBridge.scanDirectories(extraPaths.toTypedArray(), seenPaths.toTypedArray())
-            }
-            Log.d(TAG, "Rust found ${rustTracks.size} extra tracks")
-            db.trackDao().insertAll(rustTracks)
-            emit(ScanProgress.RustDone(rustTracks.size))
-        } else {
-            Log.d(TAG, "No extra paths to scan with Rust")
+        if (mediaStoreTracks.isNotEmpty()) {
+            db.trackDao().insertAll(mediaStoreTracks)
         }
-        */
 
         val total = db.trackDao().count()
         Log.d(TAG, "=== SCAN COMPLETE: $total total tracks ===")
@@ -96,12 +66,12 @@ class MediaRepository(
             val yearIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.YEAR)
             val trackIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TRACK)
 
+            Log.d(TAG, "MediaStore cursor count: ${cursor.count}")
+
             while (cursor.moveToNext()) {
                 val path = cursor.getString(pathIdx) ?: continue
-                val mime = cursor.getString(mimeIdx) ?: ""
-
-                // Só áudio de verdade
-                if (!mime.startsWith("audio/")) continue
+                val mime = cursor.getString(mimeIdx) ?: "unknown"
+                Log.d(TAG, "Found: $path (mime: $mime)")
 
                 val format = path.substringAfterLast('.', "UNKNOWN").uppercase()
 
@@ -122,35 +92,21 @@ class MediaRepository(
         return tracks
     }
 
-    /**
-     * MVP FIX: paths seguros para Android 13+ (API 33+).
-     * Com Scoped Storage, MediaStore já cobre tudo. Não precisa listar pastas manualmente.
-     */
     private fun getExtraScanPaths(): List<String> {
-        // API 33+: MediaStore com READ_MEDIA_AUDIO cobre todos os formatos nativos
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             return emptyList()
         }
-
         val paths = mutableListOf<String>()
         val extDir = android.os.Environment.getExternalStorageDirectory()
         if (!extDir.exists()) return emptyList()
 
-        val candidates = listOf(
-            "Download",
-            "Music",
-            "Documents",
-            "DCIM"
-        )
-
+        val candidates = listOf("Download", "Music", "Documents", "DCIM")
         candidates.forEach { candidate ->
             val dir = java.io.File(extDir, candidate)
             if (dir.exists() && dir.isDirectory) {
                 paths.add(dir.absolutePath)
             }
         }
-
-        Log.d(TAG, "Final extra paths: $paths")
         return paths
     }
 
@@ -166,7 +122,6 @@ class MediaRepository(
         db.queueDao().clear()
     }
 
-    // Progresso do scan
     sealed class ScanProgress {
         object Starting : ScanProgress()
         data class MediaStoreDone(val count: Int) : ScanProgress()

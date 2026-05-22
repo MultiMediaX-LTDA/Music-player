@@ -13,6 +13,17 @@
         android:queryHint="Search tracks..."
         android:background="@drawable/skeu_wood_light" />
 
+    <TextView
+        android:id="@+id/tvScanStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Loading..."
+        android:textSize="14sp"
+        android:textColor="@android:color/white"
+        android:gravity="center"
+        android:padding="12dp"
+        android:background="@drawable/skeu_neon_green" />
+
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recyclerLibrary"
         android:layout_width="match_parent"

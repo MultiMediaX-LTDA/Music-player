@@ -19,12 +19,6 @@ import android.kimyona.jammer.ui.fragments.QueueFragment
 import android.kimyona.jammer.ui.popup.HtmlPopupActivity
 import android.kimyona.jammer.ui.viewmodel.PlayerViewModel
 
-/**
- * MainActivity com ViewPager2 + TabLayout.
- * Tabs: Library | Player | Queue
- * Menu: Tutorial | FAQ | Sincronizar | Configurações
- * MVP FIX: menu_sync agora dispara scanLibrary() de verdade.
- */
 class MainActivity : AppCompatActivity() {
 
     private lateinit var viewPager: ViewPager2
@@ -57,7 +51,6 @@ class MainActivity : AppCompatActivity() {
             }
         }.attach()
 
-        // Começa na aba Player (índice 1)
         viewPager.currentItem = 1
     }
 
@@ -76,7 +69,6 @@ class MainActivity : AppCompatActivity() {
                 openHtmlPopup("FAQ", HtmlPopupActivity.ASSET_FAQ)
                 true
             }
-            // MVP FIX: sincronizar agora funciona
             R.id.menu_sync -> {
                 val vm = ViewModelProvider(this).get(PlayerViewModel::class.java)
                 vm.scanLibrary()

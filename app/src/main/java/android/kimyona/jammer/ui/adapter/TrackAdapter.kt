@@ -11,10 +11,6 @@ import androidx.recyclerview.widget.RecyclerView
 import android.kimyona.jammer.R
 import android.kimyona.jammer.data.entity.Track
 
-/**
- * Adapter de lista de tracks.
- * Mostra capa (placeholder por enquanto), título e artista.
- */
 class TrackAdapter(
     private val onClick: (Track) -> Unit
 ) : ListAdapter<Track, TrackAdapter.TrackViewHolder>(TrackDiffCallback()) {
@@ -43,7 +39,7 @@ class TrackAdapter(
             tvTitle.text = track.title
             tvArtist.text = track.artist
             tvDuration.text = formatDuration(track.durationMs)
-            ivCover.setImageResource(R.drawable.album_placeholder_vinyl)
+            ivCover.setImageResource(R.drawable.album_placeholder)
 
             itemView.setOnClickListener { onClick(track) }
         }
