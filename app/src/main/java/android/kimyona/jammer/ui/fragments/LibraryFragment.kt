@@ -39,7 +39,9 @@ class LibraryFragment : Fragment() {
                     Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             context?.contentResolver?.takePersistableUriPermission(it, takeFlags)
 
-            val prefs = requireContext().getSharedPreferences("jammer_prefs", android.content.Context.MODE_PRIVATE)
+            val prefs = requireContext().getSharedPreferences(
+                "jammer_prefs", android.content.Context.MODE_PRIVATE
+            )
             val folders = prefs.getStringSet("saf_folders", mutableSetOf())?.toMutableSet() ?: mutableSetOf()
             folders.add(it.toString())
             prefs.edit().putStringSet("saf_folders", folders).apply()
@@ -87,9 +89,9 @@ class LibraryFragment : Fragment() {
         viewModel.allTracks.observe(viewLifecycleOwner) { tracks ->
             adapter.submitList(tracks)
             if (tracks.isNullOrEmpty()) {
-                tvScanStatus.text = "0 tracks. Tap '+' to add a music folder or FAB to scan."
+                tvScanStatus.text = "0 tracks. Tap '+' to add folder or FAB to scan."
             } else {
-                tvScanStatus.text = "${tracks.size} tracks loaded"
+                tvScanStatus.text = tracks.size.toString() + " tracks loaded"
             }
         }
 
@@ -106,25 +108,28 @@ class LibraryFragment : Fragment() {
         }
 
         // Auto-scan logic
-        val prefs = requireContext().getSharedPreferences("jammer_prefs", android.content.Context.MODE_PRIVATE)
+        val prefs = requireContext().getSharedPreferences(
+            "jammer_prefs", android.content.Context.MODE_PRIVATE
+        )
         val autoScan = prefs.getBoolean("auto_scan_enabled", true)
         val dbEmpty = viewModel.allTracks.value.isNullOrEmpty()
 
-        Log.d("LibraryFragment", "autoScan=$autoScan, hasTriggered=$hasTriggeredScan, dbEmpty=$dbEmpty")
+        Log.d("LibraryFragment", "autoScan=" + autoScan + ", triggered=" + hasTriggeredScan + ", dbEmpty=" + dbEmpty)
 
         if (autoScan && !hasTriggeredScan && dbEmpty) {
             hasTriggeredScan = true
-            Log.d("LibraryFragment", "Triggering auto-scan...")
+            Log.d("LibraryFragment", "Triggering auto-scan")
             checkPermissionAndScan()
         } else if (!autoScan) {
-            tvScanStatus.text = "Manual mode: tap '+' to add folders or FAB to scan"
+            tvScanStatus.text = "Manual mode: tap '+' or FAB"
         } else if (!dbEmpty) {
-            tvScanStatus.text = "${viewModel.allTracks.value?.size ?: 0} tracks in database"
+            val count = viewModel.allTracks.value?.size ?: 0
+            tvScanStatus.text = count.toString() + " tracks in database"
         }
 
-        // Re-scan pastas SAF salvas
+        // Re-scan saved SAF folders
         val savedFolders = prefs.getStringSet("saf_folders", emptySet()) ?: emptySet()
-        savedFolders.forEach { uriString ->
+        for (uriString in savedFolders) {
             try {
                 val uri = Uri.parse(uriString)
                 val persisted = context?.contentResolver?.persistedUriPermissions?.any {
@@ -134,17 +139,20 @@ class LibraryFragment : Fragment() {
                     viewModel.scanSAF(uri)
                 }
             } catch (e: Exception) {
-                Log.e("LibraryFragment", "Failed to scan saved folder: $uriString", e)
+                Log.e("LibraryFragment", "Failed to scan saved folder: " + uriString, e)
             }
         }
 
         searchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
-            override fun onQueryTextSubmit(query: String?) = false
+            override fun onQueryTextSubmit(query: String?): Boolean {
+                return false
+            }
+
             override fun onQueryTextChange(query: String?): Boolean {
                 query?.let {
                     viewModel.search(it).observe(viewLifecycleOwner) { results ->
                         adapter.submitList(results)
-                        tvScanStatus.text = "${results?.size ?: 0} results"
+                        tvScanStatus.text = (results?.size ?: 0).toString() + " results"
                     }
                 }
                 return true
@@ -153,12 +161,28 @@ class LibraryFragment : Fragment() {
     }
 
     private fun checkPermissionAndScan() {
-        val hasPerm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.READ_MEDIA_AUDIO) == PackageManager.PERMISSION_GRANTED
+        val hasPerm: Boolean
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            hasPerm = ContextCompat.checkSelfPermission(
+                requireContext(), Manifest.permission.READ_MEDIA_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED
         } else {
-            ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+            hasPerm = ContextCompat.checkSelfPermission(
+                requireContext(), Manifest.permission.READ_EXTERNAL_STORAGE
+            ) == PackageManager.PERMISSION_GRANTED
         }
 
         if (!hasPerm) {
             tvScanStatus.text = "Requesting permission..."
-            if (Build.VERSION
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                permissionLauncher.launch(Manifest.permission.READ_MEDIA_AUDIO)
+            } else {
+                permissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+            }
+            return
+        }
+
+        tvScanStatus.text = "Scanning library..."
+        viewModel.scanLibrary()
+    }
+}
