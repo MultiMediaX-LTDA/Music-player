@@ -6,15 +6,14 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.graphics.BitmapFactory
+import android.media.MediaMetadataRetriever
 import android.os.Binder
-import android.os.IBinder
 import android.os.Build
-import android.os.Bundle
 import android.os.Handler
+import android.os.IBinder
 import android.os.Looper
 import android.support.v4.media.MediaBrowserCompat
-import android.support.v4.media.MediaDescriptionCompat
+import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
 import android.util.Log
@@ -22,67 +21,79 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.media.MediaBrowserServiceCompat
 import androidx.media.session.MediaButtonReceiver
-import com.google.android.exoplayer2.C
 import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.MediaItem
-import com.google.android.exoplayer2.PlaybackException
 import com.google.android.exoplayer2.Player
-import com.google.android.exoplayer2.audio.AudioAttributes
 import com.google.android.exoplayer2.ext.mediasession.MediaSessionConnector
-import com.google.android.exoplayer2.ext.mediasession.TimelineQueueNavigator
 import android.kimyona.jammer.R
 import android.kimyona.jammer.ui.MainActivity
-import kotlinx.coroutines.*
+import java.io.File
 
-/**
- * Serviço de playback em foreground.
- * CORRIGIDO v3: MediaMetadata com .toString(), ic_music_note removido.
- */
 class JammerPlaybackService : MediaBrowserServiceCompat() {
 
+    private val TAG = "JammerService"
+    private val NOTIFICATION_ID = 1
+    private val CHANNEL_ID = "jammer_playback"
+
+    private var player: ExoPlayer? = null
+    private var mediaSession: MediaSessionCompat? = null
+    private var mediaSessionConnector: MediaSessionConnector? = null
+    private val binder = LocalBinder()
+
+    private val positionHandler = Handler(Looper.getMainLooper())
+    private var positionRunnable: Runnable? = null
+    private var currentPlaylist = mutableListOf<String>()
+    private var currentIndex = 0
+
     companion object {
-        const val CHANNEL_ID = "jammer_playback_channel"
-        const val NOTIFICATION_ID = 1
-        const val TAG = "JammerService"
-        const val ACTION_PLAY_SINGLE = "PLAY_SINGLE"
-        const val ACTION_PLAY_LIST = "PLAY_LIST"
-        const val ACTION_TOGGLE = "TOGGLE"
-        const val ACTION_SKIP_NEXT = "SKIP_NEXT"
-        const val ACTION_SKIP_PREV = "SKIP_PREVIOUS"
-        const val ACTION_SEEK = "SEEK"
+        const val ACTION_PLAY_SINGLE = "android.kimyona.jammer.PLAY_SINGLE"
+        const val ACTION_PLAY_LIST = "android.kimyona.jammer.PLAY_LIST"
+        const val ACTION_TOGGLE = "android.kimyona.jammer.TOGGLE"
+        const val ACTION_SKIP_NEXT = "android.kimyona.jammer.SKIP_NEXT"
+        const val ACTION_SKIP_PREV = "android.kimyona.jammer.SKIP_PREV"
+        const val ACTION_SEEK = "android.kimyona.jammer.SEEK"
     }
 
     inner class LocalBinder : Binder() {
         fun getService(): JammerPlaybackService = this@JammerPlaybackService
     }
-    private val binder = LocalBinder()
-
-    private lateinit var exoPlayer: ExoPlayer
-    private lateinit var mediaSession: MediaSessionCompat
-    private lateinit var mediaSessionConnector: MediaSessionConnector
-    private val serviceJob = SupervisorJob()
-    private val serviceScope = CoroutineScope(Dispatchers.Main + serviceJob)
-
-    private var currentQueue: List<MediaItem> = emptyList()
-    private var currentIndex: Int = 0
-
-    private val positionHandler = Handler(Looper.getMainLooper())
-    private var positionRunnable: Runnable? = null
 
     override fun onCreate() {
         super.onCreate()
-        Log.d(TAG, "Service created")
+        Log.d(TAG, "Service onCreate started")
 
+        // CRITICAL: Create notification channel FIRST
         createNotificationChannel()
+
+        // CRITICAL: Call startForeground() IMMEDIATELY before any heavy work
+        // This prevents ForegroundServiceDidNotStartInTimeException
+        try {
+            val notification = buildEmptyNotification()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                ServiceCompat.startForeground(
+                    this,
+                    NOTIFICATION_ID,
+                    notification,
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+            Log.d(TAG, "startForeground() called successfully")
+        } catch (e: Exception) {
+            Log.e(TAG, "startForeground() failed: ${e.message}", e)
+            // If startForeground fails, we can't be a foreground service
+            // Stop the service to avoid crash
+            stopSelf()
+            return
+        }
+
+        // Now do the heavy initialization
         initializePlayer()
         initializeMediaSession()
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            ServiceCompat.startForeground(this, NOTIFICATION_ID, buildEmptyNotification(), android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
-        } else {
-            startForeground(NOTIFICATION_ID, buildEmptyNotification())
-        }
         startPositionUpdates()
+
+        Log.d(TAG, "Service onCreate complete")
     }
 
     override fun onBind(intent: Intent?): IBinder {
@@ -90,6 +101,13 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.d(TAG, "onStartCommand: action=${intent?.action}")
+
+        // Ensure we're in foreground state
+        if (player?.isPlaying == true) {
+            updateNotification()
+        }
+
         MediaButtonReceiver.handleIntent(mediaSession, intent)
 
         when (intent?.action) {
@@ -110,289 +128,175 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
                 seekTo(pos)
             }
         }
+
         return START_NOT_STICKY
     }
 
     private fun initializePlayer() {
-        val audioAttributes = AudioAttributes.Builder()
-            .setUsage(C.USAGE_MEDIA)
-            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-            .build()
+        Log.d(TAG, "Initializing ExoPlayer...")
+        player = ExoPlayer.Builder(this).build().apply {
+            addListener(object : Player.Listener {
+                override fun onPlaybackStateChanged(state: Int) {
+                    when (state) {
+                        Player.STATE_READY -> updateNotification()
+                        Player.STATE_ENDED -> skipToNext()
+                    }
+                }
 
-        exoPlayer = ExoPlayer.Builder(this)
-            .setAudioAttributes(audioAttributes, true)
-            .setHandleAudioBecomingNoisy(true)
-            .build()
-
-        exoPlayer.addListener(object : Player.Listener {
-            override fun onPlaybackStateChanged(state: Int) {
-                updateMediaSessionPlaybackState()
-                updateNotification()
-            }
-
-            override fun onIsPlayingChanged(isPlaying: Boolean) {
-                updateMediaSessionPlaybackState()
-                updateNotification()
-            }
-
-            override fun onPlayerError(error: PlaybackException) {
-                Log.e(TAG, "Player error: ${error.message}")
-            }
-
-            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                currentIndex = exoPlayer.currentMediaItemIndex
-                updateMediaSessionMetadata()
-                updateNotification()
-            }
-        })
+                override fun onIsPlayingChanged(isPlaying: Boolean) {
+                    updateNotification()
+                }
+            })
+        }
+        Log.d(TAG, "ExoPlayer initialized")
     }
 
     private fun initializeMediaSession() {
-        val sessionActivityPendingIntent = PendingIntent.getActivity(
-            this,
-            0,
-            Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE
-        )
-
+        Log.d(TAG, "Initializing MediaSession...")
         mediaSession = MediaSessionCompat(this, TAG).apply {
-            setSessionActivity(sessionActivityPendingIntent)
             isActive = true
-        }
+            setCallback(object : MediaSessionCompat.Callback() {
+                override fun onPlay() {
+                    togglePlayPause()
+                }
 
-        mediaSession.setCallback(object : MediaSessionCompat.Callback() {
-            override fun onPlay() {
-                exoPlayer.play()
-            }
-            override fun onPause() {
-                exoPlayer.pause()
-            }
-            override fun onSkipToNext() {
-                skipToNext()
-            }
-            override fun onSkipToPrevious() {
-                skipToPrevious()
-            }
-            override fun onSeekTo(pos: Long) {
-                seekTo(pos)
-            }
-        })
+                override fun onPause() {
+                    togglePlayPause()
+                }
 
-        mediaSessionConnector = MediaSessionConnector(mediaSession).apply {
-            setPlayer(exoPlayer)
-            setQueueNavigator(object : TimelineQueueNavigator(mediaSession) {
-                override fun getMediaDescription(
-                    player: Player,
-                    windowIndex: Int
-                ): MediaDescriptionCompat {
-                    return currentQueue.getOrNull(windowIndex)?.let {
-                        MediaDescriptionCompat.Builder()
-                            .setMediaId(it.mediaId)
-                            .setTitle(it.mediaMetadata.title?.toString())
-                            .setSubtitle(it.mediaMetadata.artist?.toString())
-                            .build()
-                    } ?: MediaDescriptionCompat.Builder().setTitle("Jammer").build()
+                override fun onSkipToNext() {
+                    skipToNext()
+                }
+
+                override fun onSkipToPrevious() {
+                    skipToPrevious()
+                }
+
+                override fun onSeekTo(pos: Long) {
+                    seekTo(pos)
                 }
             })
         }
 
-        sessionToken = mediaSession.sessionToken
-    }
-
-    private fun updateMediaSessionPlaybackState() {
-        val state = if (exoPlayer.isPlaying) {
-            PlaybackStateCompat.STATE_PLAYING
-        } else {
-            PlaybackStateCompat.STATE_PAUSED
+        mediaSessionConnector = MediaSessionConnector(mediaSession!!).apply {
+            setPlayer(player!!)
         }
 
-        val actions = PlaybackStateCompat.ACTION_PLAY or
-                PlaybackStateCompat.ACTION_PAUSE or
-                PlaybackStateCompat.ACTION_PLAY_PAUSE or
-                PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
-                PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
-                PlaybackStateCompat.ACTION_SEEK_TO
-
-        val playbackState = PlaybackStateCompat.Builder()
-            .setState(state, exoPlayer.currentPosition, 1.0f)
-            .setActions(actions)
-            .build()
-
-        mediaSession.setPlaybackState(playbackState)
-    }
-
-    private fun updateMediaSessionMetadata() {
-        val currentItem = currentQueue.getOrNull(currentIndex)
-        val metadata = android.support.v4.media.MediaMetadataCompat.Builder()
-            .putString(android.support.v4.media.MediaMetadataCompat.METADATA_KEY_TITLE,
-                currentItem?.mediaMetadata?.title?.toString() ?: "Unknown")
-            .putString(android.support.v4.media.MediaMetadataCompat.METADATA_KEY_ARTIST,
-                currentItem?.mediaMetadata?.artist?.toString() ?: "Unknown")
-            .putLong(android.support.v4.media.MediaMetadataCompat.METADATA_KEY_DURATION,
-                exoPlayer.duration)
-            .build()
-        mediaSession.setMetadata(metadata)
-    }
-
-    private fun startPositionUpdates() {
-        positionRunnable = object : Runnable {
-            override fun run() {
-                if (exoPlayer.isPlaying) {
-                    updateMediaSessionPlaybackState()
-                }
-                positionHandler.postDelayed(this, 1000)
-            }
-        }
-        positionHandler.postDelayed(positionRunnable!!, 1000)
-    }
-
-    fun playTracks(paths: List<String>, startIndex: Int = 0) {
-        currentQueue = paths.map { path ->
-            MediaItem.Builder()
-                .setUri(path)
-                .setMediaId(path)
-                .setMediaMetadata(
-                    com.google.android.exoplayer2.MediaMetadata.Builder()
-                        .setTitle(path.substringAfterLast('/'))
-                        .build()
-                )
-                .build()
-        }
-
-        currentIndex = startIndex
-        exoPlayer.setMediaItems(currentQueue, startIndex, 0)
-        exoPlayer.prepare()
-        exoPlayer.play()
-
-        updateMediaSessionMetadata()
-        updateMediaSessionPlaybackState()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            ServiceCompat.startForeground(this, NOTIFICATION_ID, buildNotification(), android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
-        } else {
-            startForeground(NOTIFICATION_ID, buildNotification())
-        }
+        sessionToken = mediaSession!!.sessionToken
+        Log.d(TAG, "MediaSession initialized")
     }
 
     fun playSingle(path: String) {
-        playTracks(listOf(path), 0)
+        Log.d(TAG, "playSingle: $path")
+        currentPlaylist = mutableListOf(path)
+        currentIndex = 0
+        player?.setMediaItem(MediaItem.fromUri(path))
+        player?.prepare()
+        player?.play()
+        updateMetadata(path)
+        updateNotification()
+    }
+
+    fun playTracks(paths: List<String>, startIndex: Int = 0) {
+        Log.d(TAG, "playTracks: ${paths.size} tracks, start=$startIndex")
+        if (paths.isEmpty()) {
+            Log.w(TAG, "playTracks called with empty list!")
+            return
+        }
+        currentPlaylist = paths.toMutableList()
+        currentIndex = startIndex.coerceIn(0, paths.size - 1)
+
+        val mediaItems = paths.map { MediaItem.fromUri(it) }
+        player?.setMediaItems(mediaItems)
+        player?.prepare()
+        player?.seekTo(currentIndex, 0)
+        player?.play()
+
+        updateMetadata(paths[currentIndex])
+        updateNotification()
     }
 
     fun togglePlayPause() {
-        if (exoPlayer.isPlaying) {
-            exoPlayer.pause()
-        } else {
-            exoPlayer.play()
+        player?.let {
+            if (it.isPlaying) {
+                it.pause()
+            } else {
+                it.play()
+            }
         }
     }
 
     fun skipToNext() {
-        if (currentIndex < currentQueue.size - 1) {
-            currentIndex++
-            exoPlayer.seekToNextMediaItem()
-        }
+        if (currentPlaylist.isEmpty()) return
+        currentIndex = (currentIndex + 1) % currentPlaylist.size
+        player?.seekTo(currentIndex, 0)
+        player?.play()
+        updateMetadata(currentPlaylist[currentIndex])
+        updateNotification()
     }
 
     fun skipToPrevious() {
-        if (currentIndex > 0) {
-            currentIndex--
-            exoPlayer.seekToPreviousMediaItem()
-        }
+        if (currentPlaylist.isEmpty()) return
+        currentIndex = if (currentIndex > 0) currentIndex - 1 else currentPlaylist.size - 1
+        player?.seekTo(currentIndex, 0)
+        player?.play()
+        updateMetadata(currentPlaylist[currentIndex])
+        updateNotification()
     }
 
     fun seekTo(positionMs: Long) {
-        exoPlayer.seekTo(positionMs)
+        player?.seekTo(positionMs)
     }
 
-    fun getCurrentPosition(): Long = exoPlayer.currentPosition
-    fun getDuration(): Long = if (exoPlayer.duration > 0) exoPlayer.duration else 0L
-    fun isPlaying(): Boolean = exoPlayer.isPlaying
-    fun getCurrentTrackPath(): String? = currentQueue.getOrNull(currentIndex)?.mediaId
+    fun getCurrentPosition(): Long = player?.currentPosition ?: 0L
+    fun getDuration(): Long = player?.duration ?: 0L
+    fun isPlaying(): Boolean = player?.isPlaying ?: false
+    fun getCurrentTrackPath(): String? = currentPlaylist.getOrNull(currentIndex)
+
+    private fun updateMetadata(path: String) {
+        val retriever = MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(path)
+            val title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
+                ?: File(path).nameWithoutExtension
+            val artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
+                ?: "Unknown Artist"
+            val album = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)
+                ?: "Unknown Album"
+            val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                ?.toLongOrNull() ?: 0L
+
+            mediaSession?.setMetadata(
+                MediaMetadataCompat.Builder()
+                    .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
+                    .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, artist)
+                    .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, album)
+                    .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, duration)
+                    .build()
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Metadata error: ${e.message}")
+        } finally {
+            retriever.release()
+        }
+    }
 
     private fun updateNotification() {
-        val notification = buildNotification()
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        nm.notify(NOTIFICATION_ID, notification)
-    }
-
-    private fun buildEmptyNotification(): Notification {
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Jammer")
-            .setContentText("Ready to play")
-            .setSmallIcon(android.R.drawable.ic_media_play)  // Ícone do sistema
-            .setOngoing(true)
-            .build()
-    }
-
-    private fun buildNotification(): Notification {
-        val isPlaying = exoPlayer.isPlaying
-
-        val prevAction = NotificationCompat.Action(
-            android.R.drawable.ic_media_previous,
-            "Previous",
-            MediaButtonReceiver.buildMediaButtonPendingIntent(
-                this,
-                PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS
-            )
-        )
-
-        val playPauseAction = if (isPlaying) {
-            NotificationCompat.Action(
-                android.R.drawable.ic_media_pause,
-                "Pause",
-                MediaButtonReceiver.buildMediaButtonPendingIntent(
+        try {
+            val notification = buildNotification()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                ServiceCompat.startForeground(
                     this,
-                    PlaybackStateCompat.ACTION_PAUSE
+                    NOTIFICATION_ID,
+                    notification,
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
                 )
-            )
-        } else {
-            NotificationCompat.Action(
-                android.R.drawable.ic_media_play,
-                "Play",
-                MediaButtonReceiver.buildMediaButtonPendingIntent(
-                    this,
-                    PlaybackStateCompat.ACTION_PLAY
-                )
-            )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "updateNotification failed: ${e.message}")
         }
-
-        val nextAction = NotificationCompat.Action(
-            android.R.drawable.ic_media_next,
-            "Next",
-            MediaButtonReceiver.buildMediaButtonPendingIntent(
-                this,
-                PlaybackStateCompat.ACTION_SKIP_TO_NEXT
-            )
-        )
-
-        val currentItem = currentQueue.getOrNull(currentIndex)
-        val title = currentItem?.mediaMetadata?.title?.toString() ?: "Jammer"
-        val artist = currentItem?.mediaMetadata?.artist?.toString() ?: "Unknown Artist"
-
-        val contentIntent = PendingIntent.getActivity(
-            this,
-            0,
-            Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE
-        )
-
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle(title)
-            .setContentText(artist)
-            .setSmallIcon(android.R.drawable.ic_media_play)  // Ícone do sistema
-            .setLargeIcon(BitmapFactory.decodeResource(resources, R.drawable.album_placeholder_vinyl))
-            .setContentIntent(contentIntent)
-            .setOngoing(true)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .addAction(prevAction)
-            .addAction(playPauseAction)
-            .addAction(nextAction)
-            .setStyle(
-                androidx.media.app.NotificationCompat.MediaStyle()
-                    .setMediaSession(mediaSession.sessionToken)
-                    .setShowActionsInCompactView(0, 1, 2)
-                    .setShowCancelButton(false)
-            )
-            .build()
     }
 
     private fun createNotificationChannel() {
@@ -402,20 +306,93 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
                 "Jammer Playback",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Music playback controls"
+                description = "Media playback controls"
                 setShowBadge(false)
             }
-            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            nm.createNotificationChannel(channel)
+            val manager = getSystemService(NotificationManager::class.java)
+            manager?.createNotificationChannel(channel)
+            Log.d(TAG, "Notification channel created")
         }
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        positionRunnable?.let { positionHandler.removeCallbacks(it) }
-        exoPlayer.release()
-        mediaSession.release()
-        serviceJob.cancel()
+    private fun buildEmptyNotification(): Notification {
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("Jammer")
+            .setContentText("Ready to play")
+            .setSmallIcon(R.drawable.ic_music_note)
+            .setOngoing(true)
+            .setSilent(true)
+            .build()
+    }
+
+    private fun buildNotification(): Notification {
+        val playPauseAction = if (player?.isPlaying == true) {
+            NotificationCompat.Action(
+                R.drawable.ic_pause,
+                "Pause",
+                PendingIntent.getService(
+                    this, 0,
+                    Intent(this, JammerPlaybackService::class.java).setAction(ACTION_TOGGLE),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+            )
+        } else {
+            NotificationCompat.Action(
+                R.drawable.ic_play,
+                "Play",
+                PendingIntent.getService(
+                    this, 0,
+                    Intent(this, JammerPlaybackService::class.java).setAction(ACTION_TOGGLE),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+            )
+        }
+
+        val contentIntent = PendingIntent.getActivity(
+            this, 0,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle(mediaSession?.controller?.metadata?.getString(MediaMetadataCompat.METADATA_KEY_TITLE) ?: "Jammer")
+            .setContentText(mediaSession?.controller?.metadata?.getString(MediaMetadataCompat.METADATA_KEY_ARTIST) ?: "Unknown")
+            .setSmallIcon(R.drawable.ic_music_note)
+            .setContentIntent(contentIntent)
+            .setOngoing(true)
+            .addAction(R.drawable.ic_prev, "Previous", PendingIntent.getService(this, 1, Intent(this, JammerPlaybackService::class.java).setAction(ACTION_SKIP_PREV), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+            .addAction(playPauseAction)
+            .addAction(R.drawable.ic_next, "Next", PendingIntent.getService(this, 2, Intent(this, JammerPlaybackService::class.java).setAction(ACTION_SKIP_NEXT), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+            .setStyle(androidx.media.app.NotificationCompat.MediaStyle()
+                .setMediaSession(mediaSession?.sessionToken)
+                .setShowActionsInCompactView(1))
+            .build()
+    }
+
+    private fun startPositionUpdates() {
+        positionRunnable = object : Runnable {
+            override fun run() {
+                player?.let {
+                    mediaSession?.setPlaybackState(
+                        PlaybackStateCompat.Builder()
+                            .setState(
+                                if (it.isPlaying) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED,
+                                it.currentPosition, 1f
+                            )
+                            .setActions(
+                                PlaybackStateCompat.ACTION_PLAY or
+                                PlaybackStateCompat.ACTION_PAUSE or
+                                PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
+                                PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
+                                PlaybackStateCompat.ACTION_SEEK_TO
+                            )
+                            .build()
+                    )
+                }
+                positionHandler.postDelayed(this, 1000)
+            }
+        }
+        positionHandler.postDelayed(positionRunnable!!, 1000)
     }
 
     override fun onGetRoot(clientPackageName: String, clientUid: Int, rootHints: Bundle?): BrowserRoot? {
@@ -424,5 +401,13 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
 
     override fun onLoadChildren(parentId: String, result: Result<MutableList<MediaBrowserCompat.MediaItem>>) {
         result.sendResult(mutableListOf())
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        positionRunnable?.let { positionHandler.removeCallbacks(it) }
+        mediaSession?.release()
+        player?.release()
+        Log.d(TAG, "Service destroyed")
     }
 }
