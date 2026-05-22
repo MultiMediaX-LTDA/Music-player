@@ -19,6 +19,7 @@ import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import androidx.media.MediaBrowserServiceCompat
 import androidx.media.session.MediaButtonReceiver
 import com.google.android.exoplayer2.C
@@ -76,7 +77,11 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
         initializePlayer()
         initializeMediaSession()
 
-        startForeground(NOTIFICATION_ID, buildEmptyNotification())
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            ServiceCompat.startForeground(this, NOTIFICATION_ID, buildEmptyNotification(), android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+        } else {
+            startForeground(NOTIFICATION_ID, buildEmptyNotification())
+        }
         startPositionUpdates()
     }
 
@@ -261,7 +266,11 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
 
         updateMediaSessionMetadata()
         updateMediaSessionPlaybackState()
-        startForeground(NOTIFICATION_ID, buildNotification())
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            ServiceCompat.startForeground(this, NOTIFICATION_ID, buildNotification(), android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+        } else {
+            startForeground(NOTIFICATION_ID, buildNotification())
+        }
     }
 
     fun playSingle(path: String) {

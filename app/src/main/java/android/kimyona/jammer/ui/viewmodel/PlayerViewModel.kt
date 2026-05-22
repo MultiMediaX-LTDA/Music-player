@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.net.Uri
+import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -65,7 +66,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         repository = MediaRepository(application, db, rustBridge)
 
         val intent = Intent(application, JammerPlaybackService::class.java)
-        application.startService(intent)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            application.startForegroundService(intent)
+        } else {
+            application.startService(intent)
+        }
         application.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
     }
 
@@ -132,7 +137,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     action = JammerPlaybackService.ACTION_PLAY_SINGLE
                     putExtra("path", track.path)
                 }
-                getApplication<Application>().startService(intent)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    getApplication<Application>().startForegroundService(intent)
+                } else {
+                    getApplication<Application>().startService(intent)
+                }
             }
         _currentTrack.value = track
         _isPlaying.value = true
@@ -147,7 +156,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     putStringArrayListExtra("paths", ArrayList(paths))
                     putExtra("startIndex", startIndex)
                 }
-                getApplication<Application>().startService(intent)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    getApplication<Application>().startForegroundService(intent)
+                } else {
+                    getApplication<Application>().startService(intent)
+                }
             }
         _currentTrack.value = tracks.getOrNull(startIndex)
         _isPlaying.value = true
@@ -159,7 +172,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 val intent = Intent(getApplication(), JammerPlaybackService::class.java).apply {
                     action = JammerPlaybackService.ACTION_TOGGLE
                 }
-                getApplication<Application>().startService(intent)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    getApplication<Application>().startForegroundService(intent)
+                } else {
+                    getApplication<Application>().startService(intent)
+                }
             }
     }
 
@@ -170,7 +187,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     action = JammerPlaybackService.ACTION_SEEK
                     putExtra("positionMs", positionMs)
                 }
-                getApplication<Application>().startService(intent)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    getApplication<Application>().startForegroundService(intent)
+                } else {
+                    getApplication<Application>().startService(intent)
+                }
             }
         _currentPosition.value = positionMs
     }
@@ -181,7 +202,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 val intent = Intent(getApplication(), JammerPlaybackService::class.java).apply {
                     action = JammerPlaybackService.ACTION_SKIP_NEXT
                 }
-                getApplication<Application>().startService(intent)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    getApplication<Application>().startForegroundService(intent)
+                } else {
+                    getApplication<Application>().startService(intent)
+                }
             }
     }
 
@@ -191,7 +216,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 val intent = Intent(getApplication(), JammerPlaybackService::class.java).apply {
                     action = JammerPlaybackService.ACTION_SKIP_PREV
                 }
-                getApplication<Application>().startService(intent)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    getApplication<Application>().startForegroundService(intent)
+                } else {
+                    getApplication<Application>().startService(intent)
+                }
             }
     }
 
