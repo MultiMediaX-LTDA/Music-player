@@ -32,43 +32,60 @@ class MediaRepository(
 
     /**
      * Scan principal: tenta MediaStore, depois fallback manual, depois Rust.
-     * Nunca retorna vazio se houver música no celular.
      */
     fun scanLibrary(): Flow<ScanProgress> = flow {
         emit(ScanProgress.Starting)
+        Log.d(TAG, "=== scanLibrary() STARTED ===")
 
         val tracks = withContext(Dispatchers.IO) {
-            // 1. MediaStore (rápido, mas pode estar vazio)
-            val mediaStoreTracks = scanMediaStore()
-            Log.d(TAG, "MediaStore: ${mediaStoreTracks.size} tracks")
-            emit(ScanProgress.MediaStoreDone(mediaStoreTracks.size))
+            try {
+                // 1. MediaStore
+                Log.d(TAG, "Step 1: Scanning MediaStore...")
+                val mediaStoreTracks = scanMediaStore()
+                Log.d(TAG, "MediaStore found: ${mediaStoreTracks.size} tracks")
+                emit(ScanProgress.MediaStoreDone(mediaStoreTracks.size))
 
-            // 2. Se MediaStore vazio ou incompleto, escaneia pastas conhecidas manualmente (Kotlin)
-            val manualTracks = if (mediaStoreTracks.isEmpty()) {
-                Log.d(TAG, "MediaStore empty — falling back to manual scanner")
-                scanManualFolders()
-            } else emptyList()
-            Log.d(TAG, "Manual scan: ${manualTracks.size} tracks")
+                // 2. Manual fallback
+                val manualTracks = if (mediaStoreTracks.isEmpty()) {
+                    Log.d(TAG, "Step 2: MediaStore empty, scanning manual folders...")
+                    scanManualFolders()
+                } else {
+                    Log.d(TAG, "Step 2: Skipping manual scan (MediaStore found tracks)")
+                    emptyList()
+                }
+                Log.d(TAG, "Manual scan found: ${manualTracks.size} tracks")
 
-            // 3. Rust scanner para pastas que MediaStore não pega (pastas ocultas, formatos exóticos)
-            val rustTracks = scanWithRust(manualTracks.map { it.path }.toTypedArray())
-            Log.d(TAG, "Rust scan: ${rustTracks.size} tracks")
+                // 3. Rust scanner
+                Log.d(TAG, "Step 3: Running Rust scanner...")
+                val rustTracks = scanWithRust(
+                    (mediaStoreTracks + manualTracks).map { it.path }.toTypedArray()
+                )
+                Log.d(TAG, "Rust scan found: ${rustTracks.size} tracks")
 
-            // 4. Merge e deduplica
-            val merged = (mediaStoreTracks + manualTracks + rustTracks)
-                .distinctBy { it.path }
-                .sortedBy { it.title.lowercase() }
+                // 4. Merge
+                val merged = (mediaStoreTracks + manualTracks + rustTracks)
+                    .distinctBy { it.path }
+                    .sortedBy { it.title.lowercase() }
 
-            Log.d(TAG, "Total unique tracks: ${merged.size}")
+                Log.d(TAG, "Total unique tracks: ${merged.size}")
 
-            if (merged.isNotEmpty()) {
-                db.trackDao().insertAll(merged)
+                if (merged.isNotEmpty()) {
+                    Log.d(TAG, "Inserting ${merged.size} tracks into database...")
+                    db.trackDao().insertAll(merged)
+                    Log.d(TAG, "Database insert complete")
+                } else {
+                    Log.w(TAG, "No tracks found anywhere!")
+                }
+
+                merged
+            } catch (e: Exception) {
+                Log.e(TAG, "CRITICAL ERROR in scanLibrary: ${e.message}", e)
+                emptyList()
             }
-
-            merged
         }
 
         emit(ScanProgress.Complete(tracks.size))
+        Log.d(TAG, "=== scanLibrary() COMPLETE: ${tracks.size} tracks ===")
     }.flowOn(Dispatchers.IO)
 
     private fun scanMediaStore(): List<Track> {
@@ -88,10 +105,12 @@ class MediaRepository(
         )
 
         try {
+            Log.d(TAG, "Querying MediaStore...")
             context.contentResolver.query(
                 uri, projection, null, null,
                 MediaStore.Audio.Media.DATE_ADDED + " DESC"
             )?.use { cursor ->
+                Log.d(TAG, "MediaStore cursor count: ${cursor.count}")
                 if (cursor.count == 0) return@use
 
                 val pathIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
@@ -99,13 +118,11 @@ class MediaRepository(
                 val artistIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
                 val albumIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
                 val durationIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
-                val mimeIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.MIME_TYPE)
                 val yearIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.YEAR)
                 val trackIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TRACK)
 
                 while (cursor.moveToNext()) {
                     val path = cursor.getString(pathIdx) ?: continue
-                    val mime = cursor.getString(mimeIdx) ?: "unknown"
                     val format = path.substringAfterLast('.', "UNKNOWN").uppercase()
 
                     tracks.add(Track(
@@ -128,9 +145,7 @@ class MediaRepository(
     }
 
     /**
-     * Fallback manual: escaneia pastas comuns de música no filesystem.
-     * NÃO usa MediaScanner.scanAll() que escaneia TUDO — isso é lento e pode crashar.
-     * Em vez disso, escaneia apenas pastas específicas de música.
+     * Escaneia pastas de música conhecidas, incluindo subdiretórios (max 3 níveis).
      */
     private fun scanManualFolders(): List<Track> {
         val commonPaths = listOf(
@@ -145,43 +160,18 @@ class MediaRepository(
 
         val audioExts = setOf("opus", "ogg", "mp3", "flac", "m4a", "aac", "wav", "wma", "mid", "midi")
         val allTracks = mutableListOf<Track>()
-        var nextId = -1L
 
         for (path in commonPaths) {
             val dir = File(path)
             if (!dir.exists() || !dir.isDirectory) {
-                Log.d(TAG, "Skipping non-existent path: $path")
+                Log.d(TAG, "Path does not exist: $path")
                 continue
             }
 
-            Log.d(TAG, "Scanning: $path")
+            Log.d(TAG, "Scanning path: $path")
             try {
-                val files = dir.listFiles()
-                if (files == null) {
-                    Log.w(TAG, "Cannot list files in: $path (permission denied)")
-                    continue
-                }
-
-                for (file in files) {
-                    if (!file.isFile) continue
-                    val ext = file.extension.lowercase()
-                    if (ext !in audioExts) continue
-
-                    val formatInfo = SupportedFormats.getByExtension(ext)
-                    val (title, artist, album) = parseFilename(file.nameWithoutExtension)
-
-                    allTracks.add(Track(
-                        path = file.absolutePath,
-                        title = title,
-                        artist = artist,
-                        album = album,
-                        durationMs = 0L,
-                        format = ext.uppercase(),
-                        year = null,
-                        trackNumber = null
-                    ))
-                    nextId--
-                }
+                val count = scanDirectoryRecursive(dir, audioExts, allTracks, 0)
+                Log.d(TAG, "  Found $count tracks in $path")
             } catch (e: SecurityException) {
                 Log.w(TAG, "No access to $path: ${e.message}")
             } catch (e: Exception) {
@@ -189,8 +179,59 @@ class MediaRepository(
             }
         }
 
-        Log.d(TAG, "Manual scan found ${allTracks.size} tracks")
+        Log.d(TAG, "Manual scan total: ${allTracks.size} tracks")
         return allTracks
+    }
+
+    /**
+     * Escaneia diretório recursivamente com limite de profundidade.
+     * Retorna número de tracks encontrados nesta branch.
+     */
+    private fun scanDirectoryRecursive(
+        dir: File,
+        audioExts: Set<String>,
+        tracks: MutableList<Track>,
+        depth: Int
+    ): Int {
+        if (depth > 3) {
+            Log.d(TAG, "  Max depth reached at: ${dir.path}")
+            return 0
+        }
+
+        var count = 0
+        try {
+            val files = dir.listFiles()
+            if (files == null) {
+                Log.w(TAG, "  Cannot list: ${dir.path} (null)")
+                return 0
+            }
+
+            for (file in files) {
+                if (file.isFile) {
+                    val ext = file.extension.lowercase()
+                    if (ext in audioExts) {
+                        val (title, artist, album) = parseFilename(file.nameWithoutExtension)
+                        tracks.add(Track(
+                            path = file.absolutePath,
+                            title = title,
+                            artist = artist,
+                            album = album,
+                            durationMs = 0L,
+                            format = ext.uppercase(),
+                            year = null,
+                            trackNumber = null
+                        ))
+                        count++
+                    }
+                } else if (file.isDirectory) {
+                    count += scanDirectoryRecursive(file, audioExts, tracks, depth + 1)
+                }
+            }
+        } catch (e: SecurityException) {
+            Log.w(TAG, "  SecurityException: ${dir.path}")
+        }
+
+        return count
     }
 
     private fun parseFilename(filename: String): Triple<String, String, String> {
@@ -220,7 +261,7 @@ class MediaRepository(
     }
 
     /**
-     * Scan via SAF (Storage Access Framework) — para pastas que o usuário escolhe manualmente.
+     * Scan via SAF (Storage Access Framework).
      */
     fun scanWithSAF(treeUri: Uri): List<Track> {
         val tracks = mutableListOf<Track>()
@@ -228,9 +269,10 @@ class MediaRepository(
 
         val tree = DocumentFile.fromTreeUri(context, treeUri) ?: return tracks
 
-        fun scanDocument(doc: DocumentFile) {
+        fun scanDocument(doc: DocumentFile, depth: Int = 0) {
+            if (depth > 3) return
             if (doc.isDirectory) {
-                doc.listFiles()?.forEach { scanDocument(it) }
+                doc.listFiles()?.forEach { scanDocument(it, depth + 1) }
             } else {
                 val ext = doc.name?.substringAfterLast('.', "")?.lowercase() ?: ""
                 if (ext in audioExts) {
@@ -242,13 +284,12 @@ class MediaRepository(
                         durationMs = 0L,
                         format = ext.uppercase()
                     ))
-                    Log.d(TAG, "SAF found: ${doc.name}")
                 }
             }
         }
 
         scanDocument(tree)
-        Log.d(TAG, "SAF total: ${tracks.size}")
+        Log.d(TAG, "SAF scan: ${tracks.size} tracks")
         return tracks
     }
 

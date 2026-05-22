@@ -87,7 +87,7 @@ class LibraryFragment : Fragment() {
         viewModel.allTracks.observe(viewLifecycleOwner) { tracks ->
             adapter.submitList(tracks)
             if (tracks.isNullOrEmpty()) {
-                tvScanStatus.text = "0 tracks. Tap '+' to add a music folder."
+                tvScanStatus.text = "0 tracks. Tap '+' to add a music folder or FAB to scan."
             } else {
                 tvScanStatus.text = "${tracks.size} tracks loaded"
             }
@@ -105,15 +105,21 @@ class LibraryFragment : Fragment() {
             folderPickerLauncher.launch(null)
         }
 
-        // Auto-scan: só roda se onboarding marcou auto_scan_enabled
+        // Auto-scan logic
         val prefs = requireContext().getSharedPreferences("jammer_prefs", android.content.Context.MODE_PRIVATE)
         val autoScan = prefs.getBoolean("auto_scan_enabled", true)
+        val dbEmpty = viewModel.allTracks.value.isNullOrEmpty()
 
-        if (autoScan && !hasTriggeredScan) {
+        Log.d("LibraryFragment", "autoScan=$autoScan, hasTriggered=$hasTriggeredScan, dbEmpty=$dbEmpty")
+
+        if (autoScan && !hasTriggeredScan && dbEmpty) {
             hasTriggeredScan = true
+            Log.d("LibraryFragment", "Triggering auto-scan...")
             checkPermissionAndScan()
         } else if (!autoScan) {
-            tvScanStatus.text = "Manual mode: tap '+' to add folders"
+            tvScanStatus.text = "Manual mode: tap '+' to add folders or FAB to scan"
+        } else if (!dbEmpty) {
+            tvScanStatus.text = "${viewModel.allTracks.value?.size ?: 0} tracks in database"
         }
 
         // Re-scan pastas SAF salvas
@@ -155,15 +161,4 @@ class LibraryFragment : Fragment() {
 
         if (!hasPerm) {
             tvScanStatus.text = "Requesting permission..."
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                permissionLauncher.launch(Manifest.permission.READ_MEDIA_AUDIO)
-            } else {
-                permissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
-            }
-            return
-        }
-
-        tvScanStatus.text = "Scanning..."
-        viewModel.scanLibrary()
-    }
-}
+            if (Build.VERSION
