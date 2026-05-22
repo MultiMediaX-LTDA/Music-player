@@ -105,13 +105,18 @@ class LibraryFragment : Fragment() {
             folderPickerLauncher.launch(null)
         }
 
-        if (!hasTriggeredScan) {
+        // Auto-scan: só roda se onboarding marcou auto_scan_enabled
+        val prefs = requireContext().getSharedPreferences("jammer_prefs", android.content.Context.MODE_PRIVATE)
+        val autoScan = prefs.getBoolean("auto_scan_enabled", true)
+
+        if (autoScan && !hasTriggeredScan) {
             hasTriggeredScan = true
             checkPermissionAndScan()
+        } else if (!autoScan) {
+            tvScanStatus.text = "Manual mode: tap '+' to add folders"
         }
 
         // Re-scan pastas SAF salvas
-        val prefs = requireContext().getSharedPreferences("jammer_prefs", android.content.Context.MODE_PRIVATE)
         val savedFolders = prefs.getStringSet("saf_folders", emptySet()) ?: emptySet()
         savedFolders.forEach { uriString ->
             try {
@@ -158,7 +163,7 @@ class LibraryFragment : Fragment() {
             return
         }
 
-        tvScanStatus.text = "Scanning MediaStore..."
+        tvScanStatus.text = "Scanning..."
         viewModel.scanLibrary()
     }
 }

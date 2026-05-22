@@ -60,6 +60,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     init {
+        // RustBridge é criado aqui, mas agora é DEFENSIVO — não crasha sem .so
         val rustBridge = android.kimyona.jammer.core.media.RustBridge()
         repository = MediaRepository(application, db, rustBridge)
 
@@ -101,23 +102,12 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 Log.d("JammerScanner", "Progress: $progress")
                 _scanProgress.value = when (progress) {
                     is MediaRepository.ScanProgress.Starting -> {
-                        Log.d("JammerScanner", "Starting scan...")
                         "Starting scan..."
                     }
                     is MediaRepository.ScanProgress.MediaStoreDone -> {
-                        Log.d("JammerScanner", "MediaStore found ${progress.count} tracks")
-                        "Found ${progress.count} tracks from MediaStore"
-                    }
-                    is MediaRepository.ScanProgress.RustScanning -> {
-                        Log.d("JammerScanner", "Rust scanner starting...")
-                        "Scanning extra folders with Rust..."
-                    }
-                    is MediaRepository.ScanProgress.RustDone -> {
-                        Log.d("JammerScanner", "Rust found ${progress.count} extra tracks")
-                        "Found ${progress.count} extra tracks"
+                        "MediaStore: ${progress.count} tracks"
                     }
                     is MediaRepository.ScanProgress.Complete -> {
-                        Log.d("JammerScanner", "=== Complete! ${progress.total} tracks total ===")
                         "Done! ${progress.total} tracks total"
                     }
                 }
@@ -125,9 +115,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    /**
-     * Scan via SAF (Storage Access Framework) - publico pra LibraryFragment usar
-     */
     fun scanSAF(uri: Uri) {
         viewModelScope.launch {
             val tracks = repository.scanWithSAF(uri)
