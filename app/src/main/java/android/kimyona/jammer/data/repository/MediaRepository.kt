@@ -9,6 +9,7 @@ import androidx.documentfile.provider.DocumentFile
 import android.kimyona.jammer.core.ffmpeg.FFmpegWrapper
 import android.kimyona.jammer.core.media.MediaScanner
 import android.kimyona.jammer.core.media.RustBridge
+import android.kimyona.jammer.core.media.SupportedFormats
 import android.kimyona.jammer.data.JammerDatabase
 import android.kimyona.jammer.data.entity.Track
 import kotlinx.coroutines.Dispatchers
@@ -128,10 +129,10 @@ class MediaRepository(
 
     /**
      * Fallback manual: escaneia pastas comuns de música no filesystem.
-     * Não precisa de permissão MANAGE_EXTERNAL_STORAGE — usa paths públicos.
-     * FIX: agora é suspend para chamar MediaScanner.scanAll() corretamente.
+     * NÃO usa MediaScanner.scanAll() que escaneia TUDO — isso é lento e pode crashar.
+     * Em vez disso, escaneia apenas pastas específicas de música.
      */
-    private suspend fun scanManualFolders(): List<Track> {
+    private fun scanManualFolders(): List<Track> {
         val commonPaths = listOf(
             "/storage/emulated/0/Music",
             "/storage/emulated/0/.Music",
@@ -142,25 +143,65 @@ class MediaRepository(
             "/sdcard/Download"
         )
 
-        val scanner = MediaScanner(context)
-        val allTracks = mutableListOf<MediaScanner.Track>()
+        val audioExts = setOf("opus", "ogg", "mp3", "flac", "m4a", "aac", "wav", "wma", "mid", "midi")
+        val allTracks = mutableListOf<Track>()
+        var nextId = -1L
 
         for (path in commonPaths) {
             val dir = File(path)
-            if (dir.exists() && dir.isDirectory) {
-                Log.d(TAG, "Manual scanning: $path")
-                try {
-                    val tracks = scanner.scanAll { current, total ->
-                        Log.d(TAG, "  $current / $total folders")
-                    }
-                    allTracks.addAll(tracks)
-                } catch (e: SecurityException) {
-                    Log.w(TAG, "No access to $path")
+            if (!dir.exists() || !dir.isDirectory) {
+                Log.d(TAG, "Skipping non-existent path: $path")
+                continue
+            }
+
+            Log.d(TAG, "Scanning: $path")
+            try {
+                val files = dir.listFiles()
+                if (files == null) {
+                    Log.w(TAG, "Cannot list files in: $path (permission denied)")
+                    continue
                 }
+
+                for (file in files) {
+                    if (!file.isFile) continue
+                    val ext = file.extension.lowercase()
+                    if (ext !in audioExts) continue
+
+                    val formatInfo = SupportedFormats.getByExtension(ext)
+                    val (title, artist, album) = parseFilename(file.nameWithoutExtension)
+
+                    allTracks.add(Track(
+                        path = file.absolutePath,
+                        title = title,
+                        artist = artist,
+                        album = album,
+                        durationMs = 0L,
+                        format = ext.uppercase(),
+                        year = null,
+                        trackNumber = null
+                    ))
+                    nextId--
+                }
+            } catch (e: SecurityException) {
+                Log.w(TAG, "No access to $path: ${e.message}")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error scanning $path: ${e.message}")
             }
         }
 
-        return allTracks.map { it.toEntity() }
+        Log.d(TAG, "Manual scan found ${allTracks.size} tracks")
+        return allTracks
+    }
+
+    private fun parseFilename(filename: String): Triple<String, String, String> {
+        var clean = filename.replace(Regex("""^\d+[.\s-]+"""), "")
+        val parts = clean.split(" - ", limit = 3)
+
+        return when (parts.size) {
+            3 -> Triple(parts[2], parts[0], parts[1])
+            2 -> Triple(parts[1], parts[0], "Unknown Album")
+            else -> Triple(clean, "Unknown Artist", "Unknown Album")
+        }
     }
 
     /**
@@ -221,22 +262,6 @@ class MediaRepository(
     suspend fun clearDatabase() {
         db.trackDao().deleteAll()
         db.queueDao().clear()
-    }
-
-    /**
-     * Converte MediaScanner.Track (scanner Kotlin manual) para entity do Room.
-     */
-    private fun MediaScanner.Track.toEntity(): Track {
-        return Track(
-            path = this.path,
-            title = this.title,
-            artist = this.artist,
-            album = this.album,
-            durationMs = this.duration,
-            format = this.extension.uppercase(),
-            year = null,
-            trackNumber = null
-        )
     }
 
     sealed class ScanProgress {
