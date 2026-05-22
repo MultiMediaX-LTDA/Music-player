@@ -15,17 +15,14 @@ import android.widget.SearchView
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
-import androidx.documentfile.provider.DocumentFile
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
-import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import android.kimyona.jammer.R
 import android.kimyona.jammer.ui.adapter.TrackAdapter
 import android.kimyona.jammer.ui.viewmodel.PlayerViewModel
 import com.google.android.material.floatingactionbutton.FloatingActionButton
-import kotlinx.coroutines.launch
 
 class LibraryFragment : Fragment() {
 
@@ -48,7 +45,7 @@ class LibraryFragment : Fragment() {
             prefs.edit().putStringSet("saf_folders", folders).apply()
 
             tvScanStatus.text = "Scanning added folder..."
-            scanSAFFolder(it)
+            viewModel.scanSAF(it)
         }
     }
 
@@ -123,7 +120,7 @@ class LibraryFragment : Fragment() {
                     it.uri == uri && it.isReadPermission
                 } ?: false
                 if (persisted) {
-                    scanSAFFolder(uri)
+                    viewModel.scanSAF(uri)
                 }
             } catch (e: Exception) {
                 Log.e("LibraryFragment", "Failed to scan saved folder: $uriString", e)
@@ -163,15 +160,5 @@ class LibraryFragment : Fragment() {
 
         tvScanStatus.text = "Scanning MediaStore..."
         viewModel.scanLibrary()
-    }
-
-    private fun scanSAFFolder(uri: Uri) {
-        lifecycleScope.launch {
-            val tracks = viewModel.repository.scanWithSAF(uri)
-            if (tracks.isNotEmpty()) {
-                viewModel.repository.db.trackDao().insertAll(tracks)
-                tvScanStatus.text = "Added ${tracks.size} tracks from folder"
-            }
-        }
     }
 }

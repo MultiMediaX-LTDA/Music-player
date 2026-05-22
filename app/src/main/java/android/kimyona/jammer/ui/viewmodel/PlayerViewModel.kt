@@ -5,6 +5,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.net.Uri
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -19,16 +20,11 @@ import android.kimyona.jammer.data.repository.MediaRepository
 import android.kimyona.jammer.service.JammerPlaybackService
 import kotlinx.coroutines.launch
 
-/**
- * ViewModel que conecta UI ao Service de playback.
- * Sobrevive rotação de tela e troca de Activity.
- */
 class PlayerViewModel(application: Application) : AndroidViewModel(application) {
 
     private val db = JammerDatabase.getDatabase(application)
     private val repository: MediaRepository
 
-    // Estado observável pela UI
     private val _isPlaying = MutableLiveData(false)
     val isPlaying: LiveData<Boolean> = _isPlaying
 
@@ -41,11 +37,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val _scanProgress = MutableLiveData<String>()
     val scanProgress: LiveData<String> = _scanProgress
 
-    // Service connection
     private var playbackService: JammerPlaybackService? = null
     private var serviceBound = false
 
-    // Handler pra atualizar seekbar
     private val positionHandler = Handler(Looper.getMainLooper())
     private var positionRunnable: Runnable? = null
 
@@ -69,7 +63,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val rustBridge = android.kimyona.jammer.core.media.RustBridge()
         repository = MediaRepository(application, db, rustBridge)
 
-        // Bind ao service
         val intent = Intent(application, JammerPlaybackService::class.java)
         application.startService(intent)
         application.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
@@ -82,7 +75,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     _currentPosition.postValue(svc.getCurrentPosition())
                     _isPlaying.postValue(svc.isPlaying())
 
-                    // Atualiza track atual se mudou
                     val currentPath = svc.getCurrentTrackPath()
                     if (currentPath != null && currentPath != _currentTrack.value?.path) {
                         viewModelScope.launch {
@@ -101,9 +93,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         positionRunnable?.let { positionHandler.removeCallbacks(it) }
     }
 
-    /**
-     * Inicia scan da biblioteca.
-     */
     fun scanLibrary() {
         viewModelScope.launch {
             Log.d("JammerScanner", "=== scanLibrary() started ===")
@@ -136,10 +125,22 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    /**
+     * Scan via SAF (Storage Access Framework) - publico pra LibraryFragment usar
+     */
+    fun scanSAF(uri: Uri) {
+        viewModelScope.launch {
+            val tracks = repository.scanWithSAF(uri)
+            if (tracks.isNotEmpty()) {
+                db.trackDao().insertAll(tracks)
+                _scanProgress.value = "Added ${tracks.size} tracks from folder"
+            }
+        }
+    }
+
     fun playTrack(track: Track) {
         playbackService?.playSingle(track.path)
             ?: run {
-                // Fallback se service ainda não bound
                 val intent = Intent(getApplication(), JammerPlaybackService::class.java).apply {
                     action = JammerPlaybackService.ACTION_PLAY_SINGLE
                     putExtra("path", track.path)

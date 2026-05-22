@@ -115,7 +115,7 @@ class MediaRepository(
     }
 
     /**
-     * Scan via SAF (Storage Access Framework) - para pastas que MediaStore ignora
+     * Scan via SAF (Storage Access Framework)
      */
     fun scanWithSAF(treeUri: Uri): List<Track> {
         val tracks = mutableListOf<Track>()
