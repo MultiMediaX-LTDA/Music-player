@@ -2,7 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="android.kimyona.jammer">
 
-    <!-- Permissões -->
+    <!-- Permissoes -->
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
@@ -42,6 +42,13 @@
             android:exported="false"
             android:theme="@style/Theme.Material3.Dark.NoActionBar" />
 
+        <!-- Settings Activity -->
+        <activity
+            android:name=".ui.settings.SettingsActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Material3.Dark.NoActionBar"
+            android:parentActivityName=".ui.MainActivity" />
+
         <!-- Playback Service em foreground -->
         <service
             android:name=".service.JammerPlaybackService"
@@ -53,7 +60,7 @@
             </intent-filter>
         </service>
 
-        <!-- Receiver para controles de mídia -->
+        <!-- Receiver para controles de midia -->
         <receiver
             android:name="androidx.media.session.MediaButtonReceiver"
             android:exported="true">

@@ -99,4 +99,8 @@ dependencies {
 
     // JSON parsing (pro Rust)
     implementation("org.json:json:20231013")
+
+    // Glide - carregamento de imagens
+    implementation("com.github.bumptech.glide:glide:4.16.0")
+    ksp("com.github.bumptech.glide:ksp:4.16.0")
 }

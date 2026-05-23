@@ -11,19 +11,32 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.PopupMenu
 import android.widget.SearchView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import android.kimyona.jammer.R
+import android.kimyona.jammer.data.JammerDatabase
+import android.kimyona.jammer.data.entity.Playlist
+import android.kimyona.jammer.data.entity.PlaylistTrackCrossRef
 import android.kimyona.jammer.ui.adapter.TrackAdapter
 import android.kimyona.jammer.ui.viewmodel.PlayerViewModel
 import com.google.android.material.floatingactionbutton.FloatingActionButton
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
+/**
+ * LibraryFragment evoluído — com ações de contexto (queue, favoritar, playlist).
+ */
 class LibraryFragment : Fragment() {
 
     private val viewModel: PlayerViewModel by activityViewModels()
@@ -79,9 +92,14 @@ class LibraryFragment : Fragment() {
         val fabRescan = view.findViewById<FloatingActionButton>(R.id.fabRescan)
         val btnAddFolder = view.findViewById<Button>(R.id.btnAddFolder)
 
-        adapter = TrackAdapter { track ->
-            viewModel.playTrack(track)
-        }
+        adapter = TrackAdapter(
+            onClick = { track ->
+                viewModel.playTrack(track)
+            },
+            onLongClick = { track, anchorView ->
+                showTrackContextMenu(track, anchorView)
+            }
+        )
 
         recyclerView.layoutManager = LinearLayoutManager(requireContext())
         recyclerView.adapter = adapter
@@ -91,7 +109,7 @@ class LibraryFragment : Fragment() {
             if (tracks.isNullOrEmpty()) {
                 tvScanStatus.text = "0 tracks. Tap '+' to add folder or FAB to scan."
             } else {
-                tvScanStatus.text = tracks.size.toString() + " tracks loaded"
+                tvScanStatus.text = "${tracks.size} tracks loaded"
             }
         }
 
@@ -112,19 +130,15 @@ class LibraryFragment : Fragment() {
             "jammer_prefs", android.content.Context.MODE_PRIVATE
         )
         val autoScan = prefs.getBoolean("auto_scan_enabled", true)
-        val dbEmpty = viewModel.allTracks.value.isNullOrEmpty()
 
-        Log.d("LibraryFragment", "autoScan=" + autoScan + ", triggered=" + hasTriggeredScan + ", dbEmpty=" + dbEmpty)
+        Log.d("LibraryFragment", "autoScan=$autoScan, triggered=$hasTriggeredScan")
 
-        if (autoScan && !hasTriggeredScan && dbEmpty) {
+        if (autoScan && !hasTriggeredScan) {
             hasTriggeredScan = true
             Log.d("LibraryFragment", "Triggering auto-scan")
             checkPermissionAndScan()
         } else if (!autoScan) {
             tvScanStatus.text = "Manual mode: tap '+' or FAB"
-        } else if (!dbEmpty) {
-            val count = viewModel.allTracks.value?.size ?: 0
-            tvScanStatus.text = count.toString() + " tracks in database"
         }
 
         // Re-scan saved SAF folders
@@ -139,7 +153,7 @@ class LibraryFragment : Fragment() {
                     viewModel.scanSAF(uri)
                 }
             } catch (e: Exception) {
-                Log.e("LibraryFragment", "Failed to scan saved folder: " + uriString, e)
+                Log.e("LibraryFragment", "Failed to scan saved folder: $uriString", e)
             }
         }
 
@@ -152,12 +166,91 @@ class LibraryFragment : Fragment() {
                 query?.let {
                     viewModel.search(it).observe(viewLifecycleOwner) { results ->
                         adapter.submitList(results)
-                        tvScanStatus.text = (results?.size ?: 0).toString() + " results"
+                        tvScanStatus.text = "${results?.size ?: 0} results"
                     }
                 }
                 return true
             }
         })
+    }
+
+    /**
+     * Mostra popup menu com ações para a track.
+     */
+    private fun showTrackContextMenu(track: android.kimyona.jammer.data.entity.Track, anchor: View) {
+        val popup = PopupMenu(requireContext(), anchor)
+        popup.menuInflater.inflate(R.menu.track_context_menu, popup.menu)
+
+        popup.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                R.id.action_play -> {
+                    viewModel.playTrack(track)
+                    true
+                }
+                R.id.action_add_queue -> {
+                    viewModel.addToQueue(track)
+                    Toast.makeText(requireContext(), "Added to queue", Toast.LENGTH_SHORT).show()
+                    true
+                }
+                R.id.action_favorite -> {
+                    viewModel.toggleFavorite(track)
+                    Toast.makeText(requireContext(), "Toggled favorite", Toast.LENGTH_SHORT).show()
+                    true
+                }
+                R.id.action_add_playlist -> {
+                    showAddToPlaylistDialog(track)
+                    true
+                }
+                else -> false
+            }
+        }
+        popup.show()
+    }
+
+    /**
+     * Dialog para selecionar playlist e adicionar a track.
+     */
+    private fun showAddToPlaylistDialog(track: android.kimyona.jammer.data.entity.Track) {
+        CoroutineScope(Dispatchers.IO).launch {
+            val playlists = JammerDatabase.getDatabase(requireContext()).playlistDao().getAll()
+                .value ?: emptyList()
+
+            withContext(Dispatchers.Main) {
+                if (playlists.isEmpty()) {
+                    AlertDialog.Builder(requireContext())
+                        .setTitle("Sem Playlists")
+                        .setMessage("Crie uma playlist primeiro.")
+                        .setPositiveButton("OK", null)
+                        .show()
+                    return@withContext
+                }
+
+                val playlistNames = playlists.map { it.name }.toTypedArray()
+                AlertDialog.Builder(requireContext())
+                    .setTitle("Adicionar a Playlist")
+                    .setItems(playlistNames) { _, which ->
+                        val playlist = playlists[which]
+                        CoroutineScope(Dispatchers.IO).launch {
+                            val crossRef = PlaylistTrackCrossRef(
+                                playlistId = playlist.id,
+                                trackPath = track.path,
+                                position = 0
+                            )
+                            JammerDatabase.getDatabase(requireContext())
+                                .playlistDao().addTrack(crossRef)
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(
+                                    requireContext(),
+                                    "Added to ${playlist.name}",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                    }
+                    .setNegativeButton("Cancelar", null)
+                    .show()
+            }
+        }
     }
 
     private fun checkPermissionAndScan() {
