@@ -36,6 +36,12 @@ import android.kimyona.jammer.core.media.AlbumArtLoader
 import android.kimyona.jammer.ui.MainActivity
 import java.io.File
 import java.util.Collections
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 
 /**
  * Jammer Playback Service — BULLETPROOF EDITION.
@@ -62,6 +68,10 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
     private val positionHandler = Handler(Looper.getMainLooper())
     private var positionRunnable: Runnable? = null
 
+
+    // === COROUTINE SCOPE ===
+    private val serviceJob = SupervisorJob()
+    private val serviceScope = CoroutineScope(Dispatchers.Main + serviceJob)
     // === QUEUE / PLAYBACK ORDER ===
     private var currentPlaylist = mutableListOf<String>()
     private var playbackOrder = mutableListOf<Int>()   // Índices em currentPlaylist
@@ -131,7 +141,11 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
 
         // GARANTIA: foreground notification deve existir em até 5s desde onStartCommand
         try {
-            val notification = if (player?.isPlaying == true) buildNotification() else buildEmptyNotification()
+            val notification = if (player?.isPlaying == true) {
+                runBlocking { buildNotification() }
+            } else {
+                buildEmptyNotification()
+            }
             startForegroundSafe(notification)
         } catch (e: Exception) {
             Log.e(TAG, "startForeground failed in onStartCommand: ${e.message}")
@@ -710,11 +724,13 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
     }
 
     private fun updateNotification() {
-        try {
-            val notification = buildNotification()
-            startForegroundSafe(notification)
-        } catch (e: Exception) {
-            Log.e(TAG, "updateNotification failed: ${e.message}")
+        serviceScope.launch {
+            try {
+                val notification = buildNotification()
+                startForegroundSafe(notification)
+            } catch (e: Exception) {
+                Log.e(TAG, "updateNotification failed: ${e.message}")
+            }
         }
     }
 
@@ -768,7 +784,7 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
         }
     }
 
-    private fun buildNotification(): Notification {
+    private suspend fun buildNotification(): Notification {
         return try {
             val playPauseAction = if (player?.isPlaying == true) {
                 NotificationCompat.Action(
@@ -789,8 +805,10 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
             )
 
             val albumArt = try {
-                getCurrentTrackPath()?.let { path ->
-                    AlbumArtLoader.loadForNotification(this, path)
+                withContext(Dispatchers.IO) {
+                    getCurrentTrackPath()?.let { path ->
+                        AlbumArtLoader.loadForNotification(this@JammerPlaybackService, path)
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Album art load error: ${e.message}")
@@ -874,6 +892,7 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
 
     override fun onDestroy() {
         super.onDestroy()
+        serviceJob.cancel()
         try {
             positionRunnable?.let { positionHandler.removeCallbacks(it) }
             abandonAudioFocus()
