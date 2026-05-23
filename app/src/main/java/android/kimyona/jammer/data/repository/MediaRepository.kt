@@ -37,55 +37,51 @@ class MediaRepository(
         emit(ScanProgress.Starting)
         Log.d(TAG, "=== scanLibrary() STARTED ===")
 
-        val tracks = withContext(Dispatchers.IO) {
-            try {
-                // 1. MediaStore
-                Log.d(TAG, "Step 1: Scanning MediaStore...")
-                val mediaStoreTracks = scanMediaStore()
-                Log.d(TAG, "MediaStore found: ${mediaStoreTracks.size} tracks")
-                emit(ScanProgress.MediaStoreDone(mediaStoreTracks.size))
+        try {
+            // 1. MediaStore
+            Log.d(TAG, "Step 1: Scanning MediaStore...")
+            val mediaStoreTracks = scanMediaStore()
+            Log.d(TAG, "MediaStore found: ${mediaStoreTracks.size} tracks")
+            emit(ScanProgress.MediaStoreDone(mediaStoreTracks.size))
 
-                // 2. Manual fallback
-                val manualTracks = if (mediaStoreTracks.isEmpty()) {
-                    Log.d(TAG, "Step 2: MediaStore empty, scanning manual folders...")
-                    scanManualFolders()
-                } else {
-                    Log.d(TAG, "Step 2: Skipping manual scan (MediaStore found tracks)")
-                    emptyList()
-                }
-                Log.d(TAG, "Manual scan found: ${manualTracks.size} tracks")
-
-                // 3. Rust scanner
-                Log.d(TAG, "Step 3: Running Rust scanner...")
-                val rustTracks = scanWithRust(
-                    (mediaStoreTracks + manualTracks).map { it.path }.toTypedArray()
-                )
-                Log.d(TAG, "Rust scan found: ${rustTracks.size} tracks")
-
-                // 4. Merge
-                val merged = (mediaStoreTracks + manualTracks + rustTracks)
-                    .distinctBy { it.path }
-                    .sortedBy { it.title.lowercase() }
-
-                Log.d(TAG, "Total unique tracks: ${merged.size}")
-
-                if (merged.isNotEmpty()) {
-                    Log.d(TAG, "Inserting ${merged.size} tracks into database...")
-                    db.trackDao().insertAll(merged)
-                    Log.d(TAG, "Database insert complete")
-                } else {
-                    Log.w(TAG, "No tracks found anywhere!")
-                }
-
-                merged
-            } catch (e: Exception) {
-                Log.e(TAG, "CRITICAL ERROR in scanLibrary: ${e.message}", e)
+            // 2. Manual fallback
+            val manualTracks = if (mediaStoreTracks.isEmpty()) {
+                Log.d(TAG, "Step 2: MediaStore empty, scanning manual folders...")
+                scanManualFolders()
+            } else {
+                Log.d(TAG, "Step 2: Skipping manual scan (MediaStore found tracks)")
                 emptyList()
             }
-        }
+            Log.d(TAG, "Manual scan found: ${manualTracks.size} tracks")
 
-        emit(ScanProgress.Complete(tracks.size))
-        Log.d(TAG, "=== scanLibrary() COMPLETE: ${tracks.size} tracks ===")
+            // 3. Rust scanner
+            Log.d(TAG, "Step 3: Running Rust scanner...")
+            val rustTracks = scanWithRust(
+                (mediaStoreTracks + manualTracks).map { it.path }.toTypedArray()
+            )
+            Log.d(TAG, "Rust scan found: ${rustTracks.size} tracks")
+
+            // 4. Merge
+            val merged = (mediaStoreTracks + manualTracks + rustTracks)
+                .distinctBy { it.path }
+                .sortedBy { it.title.lowercase() }
+
+            Log.d(TAG, "Total unique tracks: ${merged.size}")
+
+            if (merged.isNotEmpty()) {
+                Log.d(TAG, "Inserting ${merged.size} tracks into database...")
+                db.trackDao().insertAll(merged)
+                Log.d(TAG, "Database insert complete")
+            } else {
+                Log.w(TAG, "No tracks found anywhere!")
+            }
+
+            emit(ScanProgress.Complete(merged.size))
+            Log.d(TAG, "=== scanLibrary() COMPLETE: ${merged.size} tracks ===")
+        } catch (e: Exception) {
+            Log.e(TAG, "CRITICAL ERROR in scanLibrary: ${e.message}", e)
+            emit(ScanProgress.Complete(0))
+        }
     }.flowOn(Dispatchers.IO)
 
     private fun scanMediaStore(): List<Track> {
