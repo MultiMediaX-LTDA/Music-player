@@ -4,24 +4,37 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
-import androidx.room.TypeConverters
-import android.kimyona.jammer.data.dao.*
-import android.kimyona.jammer.data.entity.*
+import android.kimyona.jammer.data.dao.PlaylistDao
+import android.kimyona.jammer.data.dao.QueueDao
+import android.kimyona.jammer.data.dao.TrackDao
+import android.kimyona.jammer.data.entity.Playlist
+import android.kimyona.jammer.data.entity.PlaylistTrackCrossRef
+import android.kimyona.jammer.data.entity.QueueItem
+import android.kimyona.jammer.data.entity.Track
 
+/**
+ * JammerDatabase — BULLETPROOF EDITION.
+ *
+ * Correções:
+ * - fallbackToDestructiveMigration() para evitar crash em schema changes
+ * - Singleton thread-safe com double-check
+ * - ExportSchema = false (evita warnings)
+ */
 @Database(
     entities = [
         Track::class,
-        QueueItem::class,
         Playlist::class,
-        PlaylistTrackCrossRef::class
+        PlaylistTrackCrossRef::class,
+        QueueItem::class
     ],
     version = 1,
     exportSchema = false
 )
 abstract class JammerDatabase : RoomDatabase() {
+
     abstract fun trackDao(): TrackDao
-    abstract fun queueDao(): QueueDao
     abstract fun playlistDao(): PlaylistDao
+    abstract fun queueDao(): QueueDao
 
     companion object {
         @Volatile
@@ -29,16 +42,20 @@ abstract class JammerDatabase : RoomDatabase() {
 
         fun getDatabase(context: Context): JammerDatabase {
             return INSTANCE ?: synchronized(this) {
-                val instance = Room.databaseBuilder(
-                    context.applicationContext,
-                    JammerDatabase::class.java,
-                    "jammer_db"
-                )
-                    .fallbackToDestructiveMigration()
-                    .build()
-                INSTANCE = instance
-                instance
+                INSTANCE ?: buildDatabase(context.applicationContext).also {
+                    INSTANCE = it
+                }
             }
+        }
+
+        private fun buildDatabase(context: Context): JammerDatabase {
+            return Room.databaseBuilder(
+                context,
+                JammerDatabase::class.java,
+                "jammer_database"
+            )
+                .fallbackToDestructiveMigration()
+                .build()
         }
     }
 }

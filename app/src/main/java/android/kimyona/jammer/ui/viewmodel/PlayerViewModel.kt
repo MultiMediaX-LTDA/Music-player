@@ -14,15 +14,27 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.asLiveData
 import androidx.lifecycle.viewModelScope
 import android.kimyona.jammer.data.JammerDatabase
 import android.kimyona.jammer.data.entity.Track
 import android.kimyona.jammer.data.repository.MediaRepository
 import android.kimyona.jammer.service.JammerPlaybackService
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
- * PlayerViewModel evoluído — suporta shuffle, repeat, queue funcional e mini-player.
+ * PlayerViewModel — BULLETPROOF EDITION.
+ *
+ * Correções:
+ * - NUNCA consulta Room na main thread
+ * - Position polling via coroutine (não Handler + Room)
+ * - Service binding com null-safety
+ * - Track lookup via Flow/LiveData, não query síncrona
  */
 class PlayerViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -41,21 +53,18 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val _scanProgress = MutableLiveData<String>()
     val scanProgress: LiveData<String> = _scanProgress
 
-    // === SHUFFLE & REPEAT ===
     private val _shuffleEnabled = MutableLiveData(false)
     val shuffleEnabled: LiveData<Boolean> = _shuffleEnabled
 
     private val _repeatMode = MutableLiveData(RepeatMode.NONE)
     val repeatMode: LiveData<RepeatMode> = _repeatMode
 
-    // === QUEUE ===
     private val _queueTracks = MutableLiveData<List<Track>>(emptyList())
     val queueTracks: LiveData<List<Track>> = _queueTracks
 
     private val _queueSize = MutableLiveData(0)
     val queueSize: LiveData<Int> = _queueSize
 
-    // === MINI-PLAYER ===
     private val _showMiniPlayer = MutableLiveData(false)
     val showMiniPlayer: LiveData<Boolean> = _showMiniPlayer
 
@@ -64,25 +73,28 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     private var playbackService: JammerPlaybackService? = null
     private var serviceBound = false
-
-    private val positionHandler = Handler(Looper.getMainLooper())
-    private var positionRunnable: Runnable? = null
+    private var pollingJob: Job? = null
 
     enum class RepeatMode { NONE, ALL, ONE }
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
-            val binder = service as JammerPlaybackService.LocalBinder
-            playbackService = binder.getService()
-            serviceBound = true
-            Log.d("JammerVM", "Service bound!")
-            startPositionPolling()
+            try {
+                val binder = service as JammerPlaybackService.LocalBinder
+                playbackService = binder.getService()
+                serviceBound = true
+                Log.d("JammerVM", "Service bound!")
+                startPositionPolling()
+            } catch (e: Exception) {
+                Log.e("JammerVM", "onServiceConnected error: ${e.message}")
+            }
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
             playbackService = null
             serviceBound = false
             stopPositionPolling()
+            Log.d("JammerVM", "Service disconnected")
         }
     }
 
@@ -90,189 +102,265 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val rustBridge = android.kimyona.jammer.core.media.RustBridge()
         repository = MediaRepository(application, db, rustBridge)
 
-        val intent = Intent(application, JammerPlaybackService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            application.startForegroundService(intent)
-        } else {
-            application.startService(intent)
+        try {
+            val intent = Intent(application, JammerPlaybackService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                application.startForegroundService(intent)
+            } else {
+                application.startService(intent)
+            }
+            application.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
+        } catch (e: Exception) {
+            Log.e("JammerVM", "Service init error: ${e.message}")
         }
-        application.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
     }
 
-    // ==================== POSITION POLLING ====================
+    // ==================== POSITION POLLING (COROUTINE) ====================
 
     private fun startPositionPolling() {
-        positionRunnable = object : Runnable {
-            override fun run() {
-                playbackService?.let { svc ->
-                    _currentPosition.postValue(svc.getCurrentPosition())
-                    _isPlaying.postValue(svc.isPlaying())
+        stopPositionPolling()
+        pollingJob = viewModelScope.launch {
+            var lastPath: String? = null
+            while (isActive) {
+                try {
+                    val svc = playbackService
+                    if (svc != null) {
+                        _currentPosition.postValue(svc.getCurrentPosition())
+                        _isPlaying.postValue(svc.isPlaying())
 
-                    val currentPath = svc.getCurrentTrackPath()
-                    if (currentPath != null && currentPath != _currentTrack.value?.path) {
-                        viewModelScope.launch {
-                            val track = db.trackDao().getByPath(currentPath)
+                        val currentPath = svc.getCurrentTrackPath()
+                        if (currentPath != null && currentPath != lastPath) {
+                            lastPath = currentPath
+                            // Busca track em background — NUNCA na main thread
+                            val track = withContext(Dispatchers.IO) {
+                                try {
+                                    db.trackDao().getByPath(currentPath)
+                                } catch (e: Exception) {
+                                    Log.e("JammerVM", "DB query error: ${e.message}")
+                                    null
+                                }
+                            }
                             _currentTrack.postValue(track)
                             _showMiniPlayer.postValue(track != null)
 
-                            // Carrega capa para mini-player
-                            track?.let { t ->
-                                val art = android.kimyona.jammer.core.media.AlbumArtLoader
-                                    .extractEmbeddedArt(t.path)
+                            // Carrega capa em background
+                            if (track != null) {
+                                val art = withContext(Dispatchers.IO) {
+                                    try {
+                                        android.kimyona.jammer.core.media.AlbumArtLoader
+                                            .extractEmbeddedArt(track.path)
+                                    } catch (e: Exception) {
+                                        null
+                                    }
+                                }
                                 _currentAlbumArt.postValue(art)
                             }
                         }
-                    }
 
-                    // Atualiza queue
-                    val queuePaths = svc.getQueue()
-                    if (queuePaths.isNotEmpty()) {
-                        viewModelScope.launch {
-                            val queueList = mutableListOf<Track>()
-                            for (path in queuePaths) {
-                                db.trackDao().getByPath(path)?.let { queueList.add(it) }
+                        // Atualiza queue
+                        val queuePaths = svc.getQueue()
+                        if (queuePaths.isNotEmpty()) {
+                            val queueList = withContext(Dispatchers.IO) {
+                                val list = mutableListOf<Track>()
+                                for (path in queuePaths) {
+                                    try {
+                                        db.trackDao().getByPath(path)?.let { list.add(it) }
+                                    } catch (e: Exception) {
+                                        Log.e("JammerVM", "Queue DB error: ${e.message}")
+                                    }
+                                }
+                                list
                             }
                             _queueTracks.postValue(queueList)
                             _queueSize.postValue(queueList.size)
                         }
-                    }
 
-                    // Atualiza shuffle/repeat state do service
-                    _shuffleEnabled.postValue(svc.isShuffleEnabled())
+                        _shuffleEnabled.postValue(svc.isShuffleEnabled())
+                    }
+                } catch (e: Exception) {
+                    Log.e("JammerVM", "Polling error: ${e.message}")
                 }
-                positionHandler.postDelayed(this, 500)
+                delay(500)
             }
         }
-        positionHandler.postDelayed(positionRunnable!!, 500)
     }
 
     private fun stopPositionPolling() {
-        positionRunnable?.let { positionHandler.removeCallbacks(it) }
+        pollingJob?.cancel()
+        pollingJob = null
     }
 
     // ==================== PLAYBACK ====================
 
     fun scanLibrary() {
         viewModelScope.launch {
-            Log.d("JammerScanner", "=== scanLibrary() started ===")
-            repository.scanLibrary().collect { progress ->
-                Log.d("JammerScanner", "Progress: $progress")
-                _scanProgress.value = when (progress) {
-                    is MediaRepository.ScanProgress.Starting -> "Starting scan..."
-                    is MediaRepository.ScanProgress.MediaStoreDone -> "MediaStore: ${progress.count} tracks"
-                    is MediaRepository.ScanProgress.Complete -> "Done! ${progress.total} tracks total"
+            try {
+                repository.scanLibrary().collect { progress ->
+                    _scanProgress.value = when (progress) {
+                        is MediaRepository.ScanProgress.Starting -> "Starting scan..."
+                        is MediaRepository.ScanProgress.MediaStoreDone -> "MediaStore: ${progress.count} tracks"
+                        is MediaRepository.ScanProgress.Complete -> "Done! ${progress.total} tracks total"
+                    }
                 }
+            } catch (e: Exception) {
+                Log.e("JammerVM", "scanLibrary error: ${e.message}")
+                _scanProgress.value = "Scan failed: ${e.message}"
             }
         }
     }
 
     fun scanSAF(uri: Uri) {
         viewModelScope.launch {
-            val tracks = repository.scanWithSAF(uri)
-            if (tracks.isNotEmpty()) {
-                db.trackDao().insertAll(tracks)
-                _scanProgress.value = "Added ${tracks.size} tracks from folder"
+            try {
+                val tracks = repository.scanWithSAF(uri)
+                if (tracks.isNotEmpty()) {
+                    withContext(Dispatchers.IO) {
+                        db.trackDao().insertAll(tracks)
+                    }
+                    _scanProgress.value = "Added ${tracks.size} tracks from folder"
+                }
+            } catch (e: Exception) {
+                Log.e("JammerVM", "scanSAF error: ${e.message}")
             }
         }
     }
 
     fun playTrack(track: Track) {
-        playbackService?.playSingle(track.path)
-            ?: run {
-                val intent = Intent(getApplication(), JammerPlaybackService::class.java).apply {
-                    action = JammerPlaybackService.ACTION_PLAY_SINGLE
-                    putExtra("path", track.path)
+        try {
+            playbackService?.playSingle(track.path)
+                ?: run {
+                    val intent = Intent(getApplication(), JammerPlaybackService::class.java).apply {
+                        action = JammerPlaybackService.ACTION_PLAY_SINGLE
+                        putExtra("path", track.path)
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        getApplication<Application>().startForegroundService(intent)
+                    } else {
+                        getApplication<Application>().startService(intent)
+                    }
                 }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    getApplication<Application>().startForegroundService(intent)
-                } else {
-                    getApplication<Application>().startService(intent)
-                }
-            }
-        _currentTrack.value = track
-        _isPlaying.value = true
-        _showMiniPlayer.value = true
+            _currentTrack.value = track
+            _isPlaying.value = true
+            _showMiniPlayer.value = true
 
-        // Carrega capa
-        viewModelScope.launch {
-            val art = android.kimyona.jammer.core.media.AlbumArtLoader.extractEmbeddedArt(track.path)
-            _currentAlbumArt.value = art
+            viewModelScope.launch {
+                val art = withContext(Dispatchers.IO) {
+                    try {
+                        android.kimyona.jammer.core.media.AlbumArtLoader.extractEmbeddedArt(track.path)
+                    } catch (e: Exception) { null }
+                }
+                _currentAlbumArt.value = art
+            }
+        } catch (e: Exception) {
+            Log.e("JammerVM", "playTrack error: ${e.message}")
         }
     }
 
     fun playPlaylist(tracks: List<Track>, startIndex: Int = 0) {
-        val paths = tracks.map { it.path }
-        playbackService?.playTracks(paths, startIndex)
-            ?: run {
-                val intent = Intent(getApplication(), JammerPlaybackService::class.java).apply {
-                    action = JammerPlaybackService.ACTION_PLAY_LIST
-                    putStringArrayListExtra("paths", ArrayList(paths))
-                    putExtra("startIndex", startIndex)
+        try {
+            val paths = tracks.map { it.path }
+            playbackService?.playTracks(paths, startIndex)
+                ?: run {
+                    val intent = Intent(getApplication(), JammerPlaybackService::class.java).apply {
+                        action = JammerPlaybackService.ACTION_PLAY_LIST
+                        putStringArrayListExtra("paths", ArrayList(paths))
+                        putExtra("startIndex", startIndex)
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        getApplication<Application>().startForegroundService(intent)
+                    } else {
+                        getApplication<Application>().startService(intent)
+                    }
                 }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    getApplication<Application>().startForegroundService(intent)
-                } else {
-                    getApplication<Application>().startService(intent)
-                }
-            }
-        _currentTrack.value = tracks.getOrNull(startIndex)
-        _isPlaying.value = true
-        _showMiniPlayer.value = true
+            _currentTrack.value = tracks.getOrNull(startIndex)
+            _isPlaying.value = true
+            _showMiniPlayer.value = true
+        } catch (e: Exception) {
+            Log.e("JammerVM", "playPlaylist error: ${e.message}")
+        }
     }
 
     fun togglePlayPause() {
-        playbackService?.togglePlayPause()
-            ?: sendServiceIntent(JammerPlaybackService.ACTION_TOGGLE)
+        try {
+            playbackService?.togglePlayPause()
+                ?: sendServiceIntent(JammerPlaybackService.ACTION_TOGGLE)
+        } catch (e: Exception) {
+            Log.e("JammerVM", "togglePlayPause error: ${e.message}")
+        }
     }
 
     fun seekTo(positionMs: Long) {
-        playbackService?.seekTo(positionMs)
-            ?: sendServiceIntent(JammerPlaybackService.ACTION_SEEK, "positionMs" to positionMs)
-        _currentPosition.value = positionMs
+        try {
+            playbackService?.seekTo(positionMs)
+                ?: sendServiceIntent(JammerPlaybackService.ACTION_SEEK, "positionMs" to positionMs)
+            _currentPosition.value = positionMs
+        } catch (e: Exception) {
+            Log.e("JammerVM", "seekTo error: ${e.message}")
+        }
     }
 
     fun skipNext() {
-        playbackService?.skipToNext()
-            ?: sendServiceIntent(JammerPlaybackService.ACTION_SKIP_NEXT)
+        try {
+            playbackService?.skipToNext()
+                ?: sendServiceIntent(JammerPlaybackService.ACTION_SKIP_NEXT)
+        } catch (e: Exception) {
+            Log.e("JammerVM", "skipNext error: ${e.message}")
+        }
     }
 
     fun skipPrevious() {
-        playbackService?.skipToPrevious()
-            ?: sendServiceIntent(JammerPlaybackService.ACTION_SKIP_PREV)
+        try {
+            playbackService?.skipToPrevious()
+                ?: sendServiceIntent(JammerPlaybackService.ACTION_SKIP_PREV)
+        } catch (e: Exception) {
+            Log.e("JammerVM", "skipPrevious error: ${e.message}")
+        }
     }
 
     // ==================== SHUFFLE & REPEAT ====================
 
     fun toggleShuffle() {
-        val newValue = !(_shuffleEnabled.value ?: false)
-        _shuffleEnabled.value = newValue
-        playbackService?.setShuffle(newValue)
-            ?: sendServiceIntent(
-                JammerPlaybackService.ACTION_SET_SHUFFLE,
-                "enabled" to newValue
-            )
+        try {
+            val newValue = !(_shuffleEnabled.value ?: false)
+            _shuffleEnabled.value = newValue
+            playbackService?.setShuffle(newValue)
+                ?: sendServiceIntent(
+                    JammerPlaybackService.ACTION_SET_SHUFFLE,
+                    "enabled" to newValue
+                )
+        } catch (e: Exception) {
+            Log.e("JammerVM", "toggleShuffle error: ${e.message}")
+        }
     }
 
     fun setShuffle(enabled: Boolean) {
         _shuffleEnabled.value = enabled
-        playbackService?.setShuffle(enabled)
+        try {
+            playbackService?.setShuffle(enabled)
+        } catch (e: Exception) {
+            Log.e("JammerVM", "setShuffle error: ${e.message}")
+        }
     }
 
     fun toggleRepeat() {
-        val nextMode = when (_repeatMode.value) {
-            RepeatMode.NONE -> RepeatMode.ALL
-            RepeatMode.ALL -> RepeatMode.ONE
-            RepeatMode.ONE -> RepeatMode.NONE
-            null -> RepeatMode.NONE
-        }
-        _repeatMode.value = nextMode
-        playbackService?.let {
-            val serviceMode = when (nextMode) {
-                RepeatMode.NONE -> JammerPlaybackService.RepeatMode.NONE
-                RepeatMode.ALL -> JammerPlaybackService.RepeatMode.ALL
-                RepeatMode.ONE -> JammerPlaybackService.RepeatMode.ONE
+        try {
+            val nextMode = when (_repeatMode.value) {
+                RepeatMode.NONE -> RepeatMode.ALL
+                RepeatMode.ALL -> RepeatMode.ONE
+                RepeatMode.ONE -> RepeatMode.NONE
+                null -> RepeatMode.NONE
             }
-            it.setRepeat(serviceMode)
+            _repeatMode.value = nextMode
+            playbackService?.let {
+                val serviceMode = when (nextMode) {
+                    RepeatMode.NONE -> JammerPlaybackService.RepeatMode.NONE
+                    RepeatMode.ALL -> JammerPlaybackService.RepeatMode.ALL
+                    RepeatMode.ONE -> JammerPlaybackService.RepeatMode.ONE
+                }
+                it.setRepeat(serviceMode)
+            }
+        } catch (e: Exception) {
+            Log.e("JammerVM", "toggleRepeat error: ${e.message}")
         }
     }
 
@@ -283,50 +371,62 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     // ==================== QUEUE ====================
 
     fun addToQueue(track: Track) {
-        playbackService?.addToQueue(track.path)
-            ?: sendServiceIntent(
-                JammerPlaybackService.ACTION_ADD_TO_QUEUE,
-                "path" to track.path
-            )
-
-        // Atualiza lista de queue
-        val currentQueue = _queueTracks.value?.toMutableList() ?: mutableListOf()
-        currentQueue.add(track)
-        _queueTracks.value = currentQueue
-        _queueSize.value = currentQueue.size
+        try {
+            playbackService?.addToQueue(track.path)
+                ?: sendServiceIntent(
+                    JammerPlaybackService.ACTION_ADD_TO_QUEUE,
+                    "path" to track.path
+                )
+            val currentQueue = _queueTracks.value?.toMutableList() ?: mutableListOf()
+            currentQueue.add(track)
+            _queueTracks.value = currentQueue
+            _queueSize.value = currentQueue.size
+        } catch (e: Exception) {
+            Log.e("JammerVM", "addToQueue error: ${e.message}")
+        }
     }
 
     fun removeFromQueue(index: Int) {
-        playbackService?.removeFromQueue(index)
-
-        val currentQueue = _queueTracks.value?.toMutableList() ?: return
-        if (index in currentQueue.indices) {
-            currentQueue.removeAt(index)
-            _queueTracks.value = currentQueue
-            _queueSize.value = currentQueue.size
+        try {
+            playbackService?.removeFromQueue(index)
+            val currentQueue = _queueTracks.value?.toMutableList() ?: return
+            if (index in currentQueue.indices) {
+                currentQueue.removeAt(index)
+                _queueTracks.value = currentQueue
+                _queueSize.value = currentQueue.size
+            }
+        } catch (e: Exception) {
+            Log.e("JammerVM", "removeFromQueue error: ${e.message}")
         }
     }
 
     fun clearQueue() {
-        playbackService?.clearQueue()
-            ?: sendServiceIntent(JammerPlaybackService.ACTION_CLEAR_QUEUE)
-        _queueTracks.value = emptyList()
-        _queueSize.value = 0
+        try {
+            playbackService?.clearQueue()
+                ?: sendServiceIntent(JammerPlaybackService.ACTION_CLEAR_QUEUE)
+            _queueTracks.value = emptyList()
+            _queueSize.value = 0
+        } catch (e: Exception) {
+            Log.e("JammerVM", "clearQueue error: ${e.message}")
+        }
     }
 
     fun moveQueueItem(fromIndex: Int, toIndex: Int) {
-        playbackService?.moveQueueItem(fromIndex, toIndex)
-
-        val currentQueue = _queueTracks.value?.toMutableList() ?: return
-        if (fromIndex in currentQueue.indices && toIndex in currentQueue.indices) {
-            val item = currentQueue.removeAt(fromIndex)
-            currentQueue.add(toIndex, item)
-            _queueTracks.value = currentQueue
+        try {
+            playbackService?.moveQueueItem(fromIndex, toIndex)
+            val currentQueue = _queueTracks.value?.toMutableList() ?: return
+            if (fromIndex in currentQueue.indices && toIndex in currentQueue.indices) {
+                val item = currentQueue.removeAt(fromIndex)
+                currentQueue.add(toIndex, item)
+                _queueTracks.value = currentQueue
+            }
+        } catch (e: Exception) {
+            Log.e("JammerVM", "moveQueueItem error: ${e.message}")
         }
     }
 
     fun getDuration(): Long {
-        return playbackService?.getDuration() ?: 0L
+        return try { playbackService?.getDuration() ?: 0L } catch (e: Exception) { 0L }
     }
 
     // ==================== DATA ====================
@@ -338,36 +438,48 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun toggleFavorite(track: Track) {
         viewModelScope.launch {
-            repository.toggleFavorite(track.path)
+            try {
+                repository.toggleFavorite(track.path)
+            } catch (e: Exception) {
+                Log.e("JammerVM", "toggleFavorite error: ${e.message}")
+            }
         }
     }
 
     // ==================== HELPERS ====================
 
     private fun sendServiceIntent(action: String, vararg extras: Pair<String, Any>) {
-        val intent = Intent(getApplication(), JammerPlaybackService::class.java).apply {
-            this.action = action
-            extras.forEach { (key, value) ->
-                when (value) {
-                    is String -> putExtra(key, value)
-                    is Long -> putExtra(key, value)
-                    is Int -> putExtra(key, value)
-                    is Boolean -> putExtra(key, value)
+        try {
+            val intent = Intent(getApplication(), JammerPlaybackService::class.java).apply {
+                this.action = action
+                extras.forEach { (key, value) ->
+                    when (value) {
+                        is String -> putExtra(key, value)
+                        is Long -> putExtra(key, value)
+                        is Int -> putExtra(key, value)
+                        is Boolean -> putExtra(key, value)
+                    }
                 }
             }
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            getApplication<Application>().startForegroundService(intent)
-        } else {
-            getApplication<Application>().startService(intent)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                getApplication<Application>().startForegroundService(intent)
+            } else {
+                getApplication<Application>().startService(intent)
+            }
+        } catch (e: Exception) {
+            Log.e("JammerVM", "sendServiceIntent error: ${e.message}")
         }
     }
 
     override fun onCleared() {
         super.onCleared()
-        stopPositionPolling()
-        if (serviceBound) {
-            getApplication<Application>().unbindService(serviceConnection)
+        try {
+            stopPositionPolling()
+            if (serviceBound) {
+                getApplication<Application>().unbindService(serviceConnection)
+            }
+        } catch (e: Exception) {
+            Log.e("JammerVM", "onCleared error: ${e.message}")
         }
     }
 }

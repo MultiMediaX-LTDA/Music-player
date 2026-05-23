@@ -2,11 +2,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="android.kimyona.jammer">
 
-    <!-- Permissoes -->
+    <!-- Permissões mínimas -->
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -14,16 +13,19 @@
 
     <application
         android:name=".JammerApp"
-        android:allowBackup="false"
-        android:label="Jammer"
-        android:theme="@style/Theme.Material3.Dark.NoActionBar"
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Jammer"
         android:requestLegacyExternalStorage="true">
 
-        <!-- Onboarding: tela inicial de boas-vindas -->
+        <!-- Onboarding (launcher) -->
         <activity
             android:name=".ui.onboarding.OnboardingActivity"
             android:exported="true"
-            android:theme="@style/Theme.Material3.Dark.NoActionBar">
+            android:theme="@style/Theme.Jammer.NoActionBar">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -33,37 +35,41 @@
         <!-- Main Activity -->
         <activity
             android:name=".ui.MainActivity"
-            android:exported="true"
-            android:launchMode="singleTop" />
-
-        <!-- HTML Popup para tutoriais/FAQs -->
-        <activity
-            android:name=".ui.popup.HtmlPopupActivity"
             android:exported="false"
-            android:theme="@style/Theme.Material3.Dark.NoActionBar" />
+            android:theme="@style/Theme.Jammer" />
 
-        <!-- Settings Activity -->
+        <!-- Player Activity (legacy, pode remover depois) -->
+        <activity
+            android:name=".ui.PlayerActivity"
+            android:exported="false" />
+
+        <!-- Settings -->
         <activity
             android:name=".ui.settings.SettingsActivity"
             android:exported="false"
-            android:theme="@style/Theme.Material3.Dark.NoActionBar"
             android:parentActivityName=".ui.MainActivity" />
 
-        <!-- Playback Service em foreground -->
+        <!-- HTML Popup -->
+        <activity
+            android:name=".ui.popup.HtmlPopupActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Jammer.NoActionBar" />
+
+        <!-- Playback Service -->
         <service
             android:name=".service.JammerPlaybackService"
             android:enabled="true"
-            android:exported="true"
+            android:exported="false"
             android:foregroundServiceType="mediaPlayback">
             <intent-filter>
                 <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>
         </service>
 
-        <!-- Receiver para controles de midia -->
+        <!-- Media Button Receiver -->
         <receiver
             android:name="androidx.media.session.MediaButtonReceiver"
-            android:exported="true">
+            android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.MEDIA_BUTTON" />
             </intent-filter>
