@@ -107,14 +107,17 @@ class LibraryFragment : Fragment() {
         viewModel.allTracks.observe(viewLifecycleOwner) { tracks ->
             adapter.submitList(tracks)
             if (tracks.isNullOrEmpty()) {
-                tvScanStatus.text = "0 tracks. Tap '+' to add folder or FAB to scan."
+                tvScanStatus.text = "📂 No tracks found.\nTap '+' to pick a music folder."
             } else {
-                tvScanStatus.text = "${tracks.size} tracks loaded"
+                tvScanStatus.text = "🎵 ${tracks.size} tracks loaded"
             }
         }
 
         viewModel.scanProgress.observe(viewLifecycleOwner) { progress ->
-            progress?.let { tvScanStatus.text = it }
+            progress?.let {
+                // Only show scan progress, don't overwrite track count permanently
+                tvScanStatus.text = it
+            }
         }
 
         fabRescan.setOnClickListener {
@@ -275,7 +278,7 @@ class LibraryFragment : Fragment() {
             return
         }
 
-        tvScanStatus.text = "Scanning library..."
+        tvScanStatus.text = "🔍 Scanning MediaStore..."
         viewModel.scanLibrary()
     }
 }

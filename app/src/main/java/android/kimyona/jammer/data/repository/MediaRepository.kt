@@ -44,24 +44,30 @@ class MediaRepository(
             Log.d(TAG, "MediaStore found: ${mediaStoreTracks.size} tracks")
             emit(ScanProgress.MediaStoreDone(mediaStoreTracks.size))
 
-            // 2. Manual fallback
-            val manualTracks = if (mediaStoreTracks.isEmpty()) {
-                Log.d(TAG, "Step 2: MediaStore empty, scanning manual folders...")
+            // 2. Manual fallback — ALWAYS run if MediaStore returns few/no tracks
+            // On Android 10+, MediaStore.Audio.Media.DATA is unreliable
+            val manualTracks = if (mediaStoreTracks.size < 5) {
+                Log.d(TAG, "Step 2: MediaStore returned ${mediaStoreTracks.size}, trying manual folders...")
+                emit(ScanProgress.MediaStoreDone(mediaStoreTracks.size)) // Show count
                 scanManualFolders()
             } else {
-                Log.d(TAG, "Step 2: Skipping manual scan (MediaStore found tracks)")
+                Log.d(TAG, "Step 2: Skipping manual scan (MediaStore found ${mediaStoreTracks.size} tracks)")
                 emptyList()
             }
             Log.d(TAG, "Manual scan found: ${manualTracks.size} tracks")
 
-            // 3. Rust scanner
-            Log.d(TAG, "Step 3: Running Rust scanner...")
-            val rustTracks = scanWithRust(
-                (mediaStoreTracks + manualTracks).map { it.path }.toTypedArray()
-            )
+            // 3. Rust scanner — run on combined paths
+            val allPathsSoFar = (mediaStoreTracks + manualTracks).map { it.path }
+            val rustTracks = if (allPathsSoFar.isNotEmpty()) {
+                Log.d(TAG, "Step 3: Running Rust scanner on ${allPathsSoFar.size} paths...")
+                scanWithRust(allPathsSoFar.toTypedArray())
+            } else {
+                Log.d(TAG, "Step 3: No paths to scan with Rust, skipping")
+                emptyList()
+            }
             Log.d(TAG, "Rust scan found: ${rustTracks.size} tracks")
 
-            // 4. Merge
+            // 4. Merge and deduplicate
             val merged = (mediaStoreTracks + manualTracks + rustTracks)
                 .distinctBy { it.path }
                 .sortedBy { it.title.lowercase() }
@@ -73,7 +79,7 @@ class MediaRepository(
                 db.trackDao().insertAll(merged)
                 Log.d(TAG, "Database insert complete")
             } else {
-                Log.w(TAG, "No tracks found anywhere!")
+                Log.w(TAG, "No tracks found anywhere! User needs to add folders via SAF.")
             }
 
             emit(ScanProgress.Complete(merged.size))
@@ -101,24 +107,37 @@ class MediaRepository(
         )
 
         try {
-            Log.d(TAG, "Querying MediaStore...")
+            Log.d(TAG, "Querying MediaStore URI: $uri")
             context.contentResolver.query(
                 uri, projection, null, null,
                 MediaStore.Audio.Media.DATE_ADDED + " DESC"
             )?.use { cursor ->
                 Log.d(TAG, "MediaStore cursor count: ${cursor.count}")
-                if (cursor.count == 0) return@use
+                if (cursor.count == 0) {
+                    Log.w(TAG, "MediaStore returned 0 audio files. This is normal on Android 10+ if files are in app-private dirs.")
+                    return@use
+                }
 
-                val pathIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
-                val titleIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
-                val artistIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
-                val albumIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
-                val durationIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
-                val yearIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.YEAR)
-                val trackIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TRACK)
+                val idIdx = cursor.getColumnIndex(MediaStore.Audio.Media._ID)
+                val pathIdx = cursor.getColumnIndex(MediaStore.Audio.Media.DATA)
+                val titleIdx = cursor.getColumnIndex(MediaStore.Audio.Media.TITLE)
+                val artistIdx = cursor.getColumnIndex(MediaStore.Audio.Media.ARTIST)
+                val albumIdx = cursor.getColumnIndex(MediaStore.Audio.Media.ALBUM)
+                val durationIdx = cursor.getColumnIndex(MediaStore.Audio.Media.DURATION)
+                val yearIdx = cursor.getColumnIndex(MediaStore.Audio.Media.YEAR)
+                val trackIdx = cursor.getColumnIndex(MediaStore.Audio.Media.TRACK)
 
                 while (cursor.moveToNext()) {
-                    val path = cursor.getString(pathIdx) ?: continue
+                    // Try DATA column first, fallback to content URI
+                    val path = cursor.getString(pathIdx) ?: run {
+                        // Build content URI from ID
+                        if (idIdx >= 0) {
+                            val id = cursor.getLong(idIdx)
+                            android.content.ContentUris.withAppendedId(uri, id).toString()
+                        } else {
+                            continue
+                        }
+                    }
                     val format = path.substringAfterLast('.', "UNKNOWN").uppercase()
 
                     tracks.add(Track(
@@ -128,8 +147,8 @@ class MediaRepository(
                         album = cursor.getString(albumIdx) ?: "Unknown Album",
                         durationMs = cursor.getLong(durationIdx),
                         format = format,
-                        year = cursor.getInt(yearIdx).takeIf { it > 0 },
-                        trackNumber = cursor.getInt(trackIdx).takeIf { it > 0 }
+                        year = if (yearIdx >= 0) cursor.getInt(yearIdx).takeIf { it > 0 } else null,
+                        trackNumber = if (trackIdx >= 0) cursor.getInt(trackIdx).takeIf { it > 0 } else null
                     ))
                 }
             }
@@ -137,6 +156,7 @@ class MediaRepository(
             Log.e(TAG, "MediaStore query failed: ${e.message}", e)
         }
 
+        Log.d(TAG, "scanMediaStore returning ${tracks.size} tracks")
         return tracks
     }
 
@@ -170,6 +190,7 @@ class MediaRepository(
                 Log.d(TAG, "  Found $count tracks in $path")
             } catch (e: SecurityException) {
                 Log.w(TAG, "No access to $path: ${e.message}")
+                Log.w(TAG, "  -> On Android 10+, use SAF (tap '+' button) instead")
             } catch (e: Exception) {
                 Log.e(TAG, "Error scanning $path: ${e.message}")
             }
