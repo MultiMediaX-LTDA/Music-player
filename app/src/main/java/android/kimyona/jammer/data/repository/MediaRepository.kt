@@ -129,16 +129,19 @@ class MediaRepository(
 
                 while (cursor.moveToNext()) {
                     // Try DATA column first, fallback to content URI
-                    val path = cursor.getString(pathIdx) ?: run {
-                        // Build content URI from ID
-                        if (idIdx >= 0) {
-                            val id = cursor.getLong(idIdx)
-                            android.content.ContentUris.withAppendedId(uri, id).toString()
-                        } else {
-                            continue
-                        }
+                    val path = if (pathIdx >= 0) {
+                        cursor.getString(pathIdx)
+                    } else null
+
+                    val finalPath = if (!path.isNullOrEmpty()) {
+                        path
+                    } else if (idIdx >= 0) {
+                        val id = cursor.getLong(idIdx)
+                        android.content.ContentUris.withAppendedId(uri, id).toString()
+                    } else {
+                        continue  // skip this row
                     }
-                    val format = path.substringAfterLast('.', "UNKNOWN").uppercase()
+                    val format = finalPath.substringAfterLast('.', "UNKNOWN").uppercase()
 
                     tracks.add(Track(
                         path = path,
