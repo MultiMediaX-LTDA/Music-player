@@ -144,7 +144,7 @@ class MediaRepository(
                     val format = finalPath.substringAfterLast('.', "UNKNOWN").uppercase()
 
                     tracks.add(Track(
-                        path = path,
+                        path = finalPath,
                         title = cursor.getString(titleIdx) ?: "Unknown Title",
                         artist = cursor.getString(artistIdx) ?: "Unknown Artist",
                         album = cursor.getString(albumIdx) ?: "Unknown Album",
