@@ -13,11 +13,12 @@ import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.MediaMetadataRetriever
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
-import android.os.Looper
 import android.os.IBinder
+import android.os.Looper
 import android.support.v4.media.MediaBrowserCompat
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
@@ -34,24 +35,21 @@ import com.google.android.exoplayer2.ext.mediasession.MediaSessionConnector
 import android.kimyona.jammer.R
 import android.kimyona.jammer.core.media.AlbumArtLoader
 import android.kimyona.jammer.ui.MainActivity
-import java.io.File
-import java.util.Collections
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 
 /**
- * Jammer Playback Service — BULLETPROOF EDITION.
+ * Jammer Playback Service - BULLETPROOF EDITION.
  *
- * Correções aplicadas:
+ * Correções:
  * - Shuffle/Repeat logic corrigida (playbackOrder[] + currentPlaybackIndex)
  * - Audio focus + headphone disconnect handling
  * - Try/catch em TODO lifecycle + callbacks
  * - startForeground() garantido em onStartCommand dentro de 5s
- * - MediaItem.fromUri() com File URI para paths locais
+ * - MediaItem.fromUri() com File URI ou content:// URI
  * - Position updates com exception handling
  * - Service auto-stop quando playlist vazia e não-playing
  */
@@ -68,26 +66,21 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
     private val positionHandler = Handler(Looper.getMainLooper())
     private var positionRunnable: Runnable? = null
 
-
-    // === COROUTINE SCOPE ===
     private val serviceJob = SupervisorJob()
     private val serviceScope = CoroutineScope(Dispatchers.Main + serviceJob)
-    // === QUEUE / PLAYBACK ORDER ===
-    private var currentPlaylist = mutableListOf<String>()
-    private var playbackOrder = mutableListOf<Int>()   // Índices em currentPlaylist
-    private var currentPlaybackIndex = 0                // Posição em playbackOrder
 
-    // === MODES ===
+    private var currentPlaylist = mutableListOf<String>()
+    private var playbackOrder = mutableListOf<Int>()
+    private var currentPlaybackIndex = 0
+
     enum class RepeatMode { NONE, ALL, ONE }
     private var repeatMode = RepeatMode.NONE
     private var isShuffleEnabled = false
 
-    // === AUDIO FOCUS ===
     private var audioManager: AudioManager? = null
     private var audioFocusRequest: AudioFocusRequest? = null
     private var hasAudioFocus = false
 
-    // === RECEIVER ===
     private var noisyReceiver: BroadcastReceiver? = null
 
     companion object {
@@ -101,140 +94,104 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
         const val ACTION_CLEAR_QUEUE = "android.kimyona.jammer.CLEAR_QUEUE"
         const val ACTION_SET_SHUFFLE = "android.kimyona.jammer.SET_SHUFFLE"
         const val ACTION_SET_REPEAT = "android.kimyona.jammer.SET_REPEAT"
-        const val ACTION_STOP = "android.kimyona.jammer.STOP"
     }
-
-    inner class LocalBinder : android.os.Binder() {
-        fun getService(): JammerPlaybackService = this@JammerPlaybackService
-    }
-    private val binder = LocalBinder()
 
     // ==================== LIFECYCLE ====================
 
     override fun onCreate() {
         super.onCreate()
-        Log.d(TAG, "onCreate")
-
         try {
+            Log.d(TAG, "onCreate")
             createNotificationChannel()
-            val notification = buildEmptyNotification()
-            startForegroundSafe(notification)
-
             audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-            registerNoisyReceiver()
             initializePlayer()
             initializeMediaSession()
+            registerNoisyReceiver()
             startPositionUpdates()
         } catch (e: Exception) {
-            Log.e(TAG, "FATAL onCreate: ${e.message}", e)
-            stopSelf()
+            Log.e(TAG, "onCreate failed: ${e.message}", e)
         }
-    }
-
-    override fun onBind(intent: Intent?): IBinder {
-        Log.d(TAG, "onBind")
-        return binder
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(TAG, "onStartCommand action=${intent?.action}")
-
-        // GARANTIA: foreground notification deve existir em até 5s desde onStartCommand
         try {
-            val notification = if (player?.isPlaying == true) {
-                runBlocking { buildNotification() }
-            } else {
-                buildEmptyNotification()
-            }
-            startForegroundSafe(notification)
-        } catch (e: Exception) {
-            Log.e(TAG, "startForeground failed in onStartCommand: ${e.message}")
-        }
+            Log.d(TAG, "onStartCommand: action=${intent?.action}")
 
-        try {
-            MediaButtonReceiver.handleIntent(mediaSession, intent)
-        } catch (e: Exception) {
-            Log.e(TAG, "MediaButtonReceiver failed: ${e.message}")
-        }
+            // Garante foreground IMEDIATAMENTE
+            val emptyNotification = buildEmptyNotification()
+            startForegroundSafe(emptyNotification)
 
-        when (intent?.action) {
-            ACTION_PLAY_SINGLE -> {
-                val path = intent.getStringExtra("path")
-                if (!path.isNullOrEmpty()) {
-                    playSingle(path)
-                } else {
-                    Log.w(TAG, "PLAY_SINGLE with null path")
+            when (intent?.action) {
+                ACTION_PLAY_SINGLE -> {
+                    val path = intent.getStringExtra("path")
+                    path?.let { playSingle(it) }
+                }
+                ACTION_PLAY_LIST -> {
+                    val paths = intent.getStringArrayListExtra("paths")
+                    val startIndex = intent.getIntExtra("startIndex", 0)
+                    paths?.let { playTracks(it, startIndex) }
+                }
+                ACTION_TOGGLE -> togglePlayPause()
+                ACTION_SKIP_NEXT -> skipToNext()
+                ACTION_SKIP_PREV -> skipToPrevious()
+                ACTION_SEEK -> {
+                    val pos = intent.getLongExtra("position", 0)
+                    seekTo(pos)
+                }
+                ACTION_ADD_TO_QUEUE -> {
+                    val path = intent.getStringExtra("path")
+                    path?.let { addToQueue(it) }
+                }
+                ACTION_CLEAR_QUEUE -> clearQueue()
+                ACTION_SET_SHUFFLE -> {
+                    val enabled = intent.getBooleanExtra("enabled", false)
+                    setShuffle(enabled)
+                }
+                ACTION_SET_REPEAT -> {
+                    val modeOrdinal = intent.getIntExtra("mode", 0)
+                    setRepeat(RepeatMode.entries[modeOrdinal])
+                }
+                else -> {
+                    MediaButtonReceiver.handleIntent(mediaSession, intent)
                 }
             }
-            ACTION_PLAY_LIST -> {
-                val paths = intent.getStringArrayListExtra("paths")
-                val startIndex = intent.getIntExtra("startIndex", 0)
-                if (!paths.isNullOrEmpty()) {
-                    playTracks(paths, startIndex)
-                } else {
-                    Log.w(TAG, "PLAY_LIST with null/empty paths")
-                }
-            }
-            ACTION_TOGGLE -> togglePlayPause()
-            ACTION_SKIP_NEXT -> skipToNext()
-            ACTION_SKIP_PREV -> skipToPrevious()
-            ACTION_SEEK -> {
-                val pos = intent.getLongExtra("positionMs", 0)
-                seekTo(pos)
-            }
-            ACTION_ADD_TO_QUEUE -> {
-                val path = intent.getStringExtra("path")
-                if (!path.isNullOrEmpty()) addToQueue(path)
-            }
-            ACTION_CLEAR_QUEUE -> clearQueue()
-            ACTION_SET_SHUFFLE -> {
-                val enabled = intent.getBooleanExtra("enabled", false)
-                setShuffle(enabled)
-            }
-            ACTION_SET_REPEAT -> {
-                val mode = try {
-                    intent.getSerializableExtra("mode") as? RepeatMode
-                } catch (e: Exception) { null } ?: RepeatMode.NONE
-                setRepeat(mode)
-            }
-            ACTION_STOP -> {
-                stopPlayback()
-                stopSelf()
-            }
+        } catch (e: Exception) {
+            Log.e(TAG, "onStartCommand error: ${e.message}", e)
         }
 
-        return START_NOT_STICKY
+        return START_STICKY
+    }
+
+    override fun onBind(intent: Intent?): IBinder? {
+        return super.onBind(intent)
     }
 
     // ==================== PLAYER INIT ====================
 
     private fun initializePlayer() {
         try {
-            Log.d(TAG, "Initializing ExoPlayer...")
             player = ExoPlayer.Builder(this).build().apply {
                 addListener(object : Player.Listener {
                     override fun onPlaybackStateChanged(state: Int) {
                         try {
-                            when (state) {
-                                Player.STATE_READY -> updateNotification()
-                                Player.STATE_ENDED -> onTrackEnded()
-                                Player.STATE_IDLE -> updateNotification()
+                            if (state == Player.STATE_ENDED) {
+                                onTrackEnded()
                             }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "onPlaybackStateChanged error: ${e.message}")
-                        }
-                    }
-                    override fun onIsPlayingChanged(isPlaying: Boolean) {
-                        try {
-                            updateNotification()
                             updatePlaybackState(isPlaying)
                         } catch (e: Exception) {
-                            Log.e(TAG, "onIsPlayingChanged error: ${e.message}")
+                            Log.e(TAG, "onPlaybackStateChanged error", e)
+                        }
+                    }
+                    override fun onIsPlayingChanged(isPlayingNow: Boolean) {
+                        try {
+                            updatePlaybackState(isPlayingNow)
+                            updateNotification()
+                        } catch (e: Exception) {
+                            Log.e(TAG, "onIsPlayingChanged error", e)
                         }
                     }
                     override fun onPlayerError(error: com.google.android.exoplayer2.PlaybackException) {
-                        Log.e(TAG, "Player error: ${error.errorCodeName} — ${error.message}")
-                        // Tenta próxima track em vez de crashar
+                        Log.e(TAG, "Player error: ${error.errorCodeName} - ${error.message}")
                         skipToNext()
                     }
                 })
@@ -371,7 +328,7 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
             noisyReceiver = object : BroadcastReceiver() {
                 override fun onReceive(context: Context?, intent: Intent?) {
                     if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
-                        Log.d(TAG, "Audio becoming noisy — pausing")
+                        Log.d(TAG, "Audio becoming noisy - pausing")
                         player?.pause()
                         updateNotification()
                     }
@@ -418,13 +375,15 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
     private fun loadAndPlay(path: String) {
         try {
             if (!requestAudioFocus()) {
-                Log.w(TAG, "Audio focus not granted — playing anyway")
+                Log.w(TAG, "Audio focus not granted - playing anyway")
             }
-            val uri = if (path.startsWith("content://")) {
-                android.net.Uri.parse(path)
-            } else {
-                android.net.Uri.fromFile(File(path))
+
+            // Suporta tanto File paths quanto content:// URIs
+            val uri = when {
+                path.startsWith("content://") -> Uri.parse(path)
+                else -> Uri.fromFile(java.io.File(path))
             }
+
             player?.setMediaItem(MediaItem.fromUri(uri))
             player?.prepare()
             player?.play()
@@ -513,7 +472,6 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
                 val path = currentPlaylist.getOrNull(effectiveIndex) ?: return
                 loadAndPlay(path)
             } else {
-                // Fim da playlist, não repete
                 player?.pause()
                 updateNotification()
             }
@@ -548,7 +506,6 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
             isShuffleEnabled = enabled
             val oldEffective = playbackOrder.getOrNull(currentPlaybackIndex) ?: 0
             rebuildPlaybackOrder()
-            // Reposiciona currentPlaybackIndex para apontar para a mesma música
             currentPlaybackIndex = playbackOrder.indexOf(oldEffective).coerceAtLeast(0)
             Log.d(TAG, "Shuffle: $enabled, order=$playbackOrder")
         } catch (e: Exception) {
@@ -578,11 +535,7 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
     fun addToQueue(path: String) {
         try {
             currentPlaylist.add(path)
-            if (isShuffleEnabled) {
-                playbackOrder.add(currentPlaylist.size - 1)
-            } else {
-                playbackOrder.add(currentPlaylist.size - 1)
-            }
+            playbackOrder.add(currentPlaylist.size - 1)
             Log.d(TAG, "Added to queue: $path. Size: ${currentPlaylist.size}")
         } catch (e: Exception) {
             Log.e(TAG, "addToQueue error: ${e.message}")
@@ -595,9 +548,7 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
             val removedOriginalIndex = playbackOrder.getOrNull(currentPlaybackIndex) ?: -1
             currentPlaylist.removeAt(index)
             rebuildPlaybackOrder()
-            // Ajusta currentPlaybackIndex se necessário
             if (removedOriginalIndex == index) {
-                // Removeu a atual, toca próxima
                 if (currentPlaybackIndex >= playbackOrder.size) currentPlaybackIndex = 0
                 if (playbackOrder.isNotEmpty()) {
                     val eff = playbackOrder[currentPlaybackIndex]
@@ -640,7 +591,6 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
             currentPlaylist.add(toIndex, item)
             rebuildPlaybackOrder()
 
-            // Ajusta currentPlaybackIndex
             val currentOriginal = playbackOrder.getOrNull(currentPlaybackIndex) ?: 0
             when {
                 fromIndex == currentOriginal -> {
@@ -679,9 +629,16 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
     private fun updateMetadata(path: String) {
         val retriever = MediaMetadataRetriever()
         try {
-            retriever.setDataSource(path)
+            when {
+                path.startsWith("content://") -> {
+                    val fd = contentResolver.openFileDescriptor(Uri.parse(path), "r")
+                    fd?.use { retriever.setDataSource(it.fileDescriptor) }
+                }
+                else -> retriever.setDataSource(path)
+            }
+
             val title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
-                ?: File(path).nameWithoutExtension
+                ?: java.io.File(path).nameWithoutExtension
             val artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: "Unknown Artist"
             val album = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM) ?: "Unknown Album"
             val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
@@ -692,6 +649,7 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
                     .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, artist)
                     .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, album)
                     .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, duration)
+                    .putString(MediaMetadataCompat.METADATA_KEY_MEDIA_URI, path)
                     .build()
             )
         } catch (e: Exception) {

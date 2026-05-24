@@ -4,18 +4,18 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
+import android.net.Uri
 import android.widget.ImageView
 import com.bumptech.glide.Glide
-import com.bumptech.glide.request.target.CustomTarget
-import com.bumptech.glide.request.transition.Transition
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * AlbumArtLoader — BULLETPROOF EDITION.
+ * AlbumArtLoader — BULLETPROOF + SAF-COMPATIBLE.
  *
  * Correções:
+ * - Suporta content:// URIs (SAF) além de paths de arquivo
  * - extractEmbeddedArt é suspend (background thread)
  * - load() / loadThumbnail() usam coroutines internamente
  * - Nunca chama MediaMetadataRetriever na main thread
@@ -27,12 +27,26 @@ object AlbumArtLoader {
 
     /**
      * Extrai capa embutida — SÓ chamar de background thread (suspend).
+     * Suporta tanto File paths quanto content:// URIs.
      */
-    suspend fun extractEmbeddedArt(path: String?): Bitmap? = withContext(Dispatchers.IO) {
-        if (path.isNullOrEmpty() || !File(path).exists()) return@withContext null
+    suspend fun extractEmbeddedArt(context: Context, path: String?): Bitmap? = withContext(Dispatchers.IO) {
+        if (path.isNullOrEmpty()) return@withContext null
+
         val retriever = MediaMetadataRetriever()
         try {
-            retriever.setDataSource(path)
+            when {
+                path.startsWith("content://") -> {
+                    val fd = context.contentResolver.openFileDescriptor(Uri.parse(path), "r")
+                    fd?.use {
+                        retriever.setDataSource(it.fileDescriptor)
+                    }
+                }
+                File(path).exists() -> {
+                    retriever.setDataSource(path)
+                }
+                else -> return@withContext null
+            }
+
             val art = retriever.embeddedPicture
             if (art != null) {
                 BitmapFactory.decodeByteArray(art, 0, art.size)
@@ -46,7 +60,7 @@ object AlbumArtLoader {
 
     /**
      * Carrega capa em ImageView (async, seguro para UI thread).
-     * Usa Glide com transição suave.
+     * Suporta content:// URIs via Glide.
      */
     fun load(context: Context, path: String?, imageView: ImageView, placeholderRes: Int) {
         if (path.isNullOrEmpty()) {
@@ -54,8 +68,12 @@ object AlbumArtLoader {
             return
         }
         try {
+            val loadTarget = when {
+                path.startsWith("content://") -> Uri.parse(path)
+                else -> File(path)
+            }
             Glide.with(context)
-                .load(File(path))
+                .load(loadTarget)
                 .placeholder(placeholderRes)
                 .error(placeholderRes)
                 .centerCrop()
@@ -67,6 +85,7 @@ object AlbumArtLoader {
 
     /**
      * Carrega thumbnail com tamanho específico.
+     * Suporta content:// URIs.
      */
     fun loadThumbnail(
         context: Context,
@@ -80,8 +99,12 @@ object AlbumArtLoader {
             return
         }
         try {
+            val loadTarget = when {
+                path.startsWith("content://") -> Uri.parse(path)
+                else -> File(path)
+            }
             Glide.with(context)
-                .load(File(path))
+                .load(loadTarget)
                 .placeholder(placeholderRes)
                 .error(placeholderRes)
                 .override(sizeDp, sizeDp)
@@ -94,14 +117,12 @@ object AlbumArtLoader {
 
     /**
      * Carrega capa para notificação — com cache LruCache.
-     * Pode ser chamado de qualquer thread (usa cache se disponível).
+     * Suporta content:// URIs.
      */
     suspend fun loadForNotification(context: Context, path: String?): Bitmap? {
         if (path.isNullOrEmpty()) return null
-        // Verifica cache
         notificationCache.get(path)?.let { return it }
-        // Extrai em background
-        val bitmap = extractEmbeddedArt(path)
+        val bitmap = extractEmbeddedArt(context, path)
         if (bitmap != null) {
             notificationCache.put(path, bitmap)
         }

@@ -108,7 +108,7 @@
             android:id="@+id/btnShuffle"
             android:layout_width="48dp"
             android:layout_height="48dp"
-            android:src="@drawable/ic_play"
+            android:src="@drawable/ic_shuffle"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:tint="#888888"
             android:contentDescription="Shuffle" />
@@ -153,7 +153,7 @@
             android:id="@+id/btnRepeat"
             android:layout_width="48dp"
             android:layout_height="48dp"
-            android:src="@drawable/ic_play"
+            android:src="@drawable/ic_repeat"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:tint="#888888"
             android:contentDescription="Repeat" />

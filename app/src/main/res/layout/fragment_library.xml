@@ -1,4 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    fragment_library.xml — v2
+    Adds a horizontally scrollable filter strip between the SearchView and the
+    status bar. Two ChipGroups live inside it — one for content ratings, one
+    for release types — each with a "All" chip that clears the filter.
+-->
 <androidx.coordinatorlayout.widget.CoordinatorLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -15,14 +21,65 @@
             android:id="@+id/searchView"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:queryHint="Search tracks..."
+            android:queryHint="Search tracks, artists, aliases…"
             android:background="@drawable/skeu_wood_light" />
+
+        <!-- ── Filter strip ──────────────────────────────────────────────── -->
+        <HorizontalScrollView
+            android:id="@+id/filterScrollView"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:scrollbars="none"
+            android:paddingHorizontal="8dp"
+            android:paddingVertical="6dp"
+            android:background="#1A1A1A">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <!-- Rating filter group -->
+                <com.google.android.material.chip.ChipGroup
+                    android:id="@+id/chipGroupRating"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    app:singleSelection="true"
+                    app:selectionRequired="true">
+
+                    <!-- Chips are added programmatically in LibraryFragment -->
+
+                </com.google.android.material.chip.ChipGroup>
+
+                <!-- Divider between groups -->
+                <View
+                    android:layout_width="1dp"
+                    android:layout_height="24dp"
+                    android:background="#444444"
+                    android:layout_marginHorizontal="8dp" />
+
+                <!-- Release-type filter group -->
+                <com.google.android.material.chip.ChipGroup
+                    android:id="@+id/chipGroupReleaseType"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    app:singleSelection="true"
+                    app:selectionRequired="true">
+
+                    <!-- Chips are added programmatically in LibraryFragment -->
+
+                </com.google.android.material.chip.ChipGroup>
+
+            </LinearLayout>
+        </HorizontalScrollView>
+        <!-- ── /Filter strip ─────────────────────────────────────────────── -->
 
         <TextView
             android:id="@+id/tvScanStatus"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Checking permissions..."
+            android:text="Checking permissions…"
             android:textSize="14sp"
             android:textColor="@android:color/white"
             android:gravity="center"

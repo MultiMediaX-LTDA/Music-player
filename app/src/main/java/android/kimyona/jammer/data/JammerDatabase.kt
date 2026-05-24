@@ -13,12 +13,14 @@ import android.kimyona.jammer.data.entity.QueueItem
 import android.kimyona.jammer.data.entity.Track
 
 /**
- * JammerDatabase — BULLETPROOF EDITION.
+ * JammerDatabase — v2
  *
- * Correções:
- * - fallbackToDestructiveMigration() para evitar crash em schema changes
- * - Singleton thread-safe com double-check
- * - ExportSchema = false (evita warnings)
+ * Schema changes from v1:
+ *   Track: added albumArtist, alias, contentRating, releaseType columns.
+ *   TrackDao: alias-aware search; content-rating and release-type filter queries.
+ *
+ * fallbackToDestructiveMigration() handles the upgrade automatically.
+ * The library will be re-scanned on first launch after the update.
  */
 @Database(
     entities = [
@@ -27,7 +29,7 @@ import android.kimyona.jammer.data.entity.Track
         PlaylistTrackCrossRef::class,
         QueueItem::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class JammerDatabase : RoomDatabase() {

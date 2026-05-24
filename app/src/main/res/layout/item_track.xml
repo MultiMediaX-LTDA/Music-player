@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout 
+<!--
+    item_track.xml — v2
+    Adds a content rating badge (hidden when NONE) and a release type tag
+    to the right-hand side of the track row.
+-->
+<LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
@@ -7,12 +12,15 @@
     android:padding="12dp"
     android:gravity="center_vertical">
 
+    <!-- Album art thumbnail -->
     <ImageView
         android:id="@+id/ivItemCover"
         android:layout_width="56dp"
         android:layout_height="56dp"
-        android:src="@drawable/album_placeholder" />
+        android:src="@drawable/album_placeholder"
+        android:scaleType="centerCrop" />
 
+    <!-- Title + artist block -->
     <LinearLayout
         android:layout_width="0dp"
         android:layout_height="wrap_content"
@@ -30,6 +38,7 @@
             android:maxLines="1"
             android:ellipsize="end" />
 
+        <!-- Multi-artist display — populated from Track.displayArtist -->
         <TextView
             android:id="@+id/tvItemArtist"
             android:layout_width="wrap_content"
@@ -37,16 +46,54 @@
             android:text="Artist"
             android:textSize="13sp"
             android:textColor="@android:color/darker_gray"
-            android:maxLines="1" />
+            android:maxLines="1"
+            android:ellipsize="end" />
+
+        <!-- Release type label — GONE when releaseType is null -->
+        <TextView
+            android:id="@+id/tvItemReleaseType"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="11sp"
+            android:textColor="#D4A574"
+            android:visibility="gone" />
 
     </LinearLayout>
 
-    <TextView
-        android:id="@+id/tvItemDuration"
+    <!-- Right-hand meta block: duration + content rating badge -->
+    <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="0:00"
-        android:textSize="12sp"
-        android:textColor="@android:color/darker_gray" />
+        android:orientation="vertical"
+        android:gravity="end|center_vertical"
+        android:layout_marginStart="8dp">
+
+        <TextView
+            android:id="@+id/tvItemDuration"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="0:00"
+            android:textSize="12sp"
+            android:textColor="@android:color/darker_gray" />
+
+        <!--
+            Content rating badge.
+            GONE when ContentRating is NONE (clean/unrated).
+            Background tint is set programmatically per rating.
+        -->
+        <TextView
+            android:id="@+id/tvItemContentRating"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:paddingHorizontal="5dp"
+            android:paddingVertical="1dp"
+            android:textSize="10sp"
+            android:textColor="@android:color/white"
+            android:textStyle="bold"
+            android:background="#CC333333"
+            android:visibility="gone" />
+
+    </LinearLayout>
 
 </LinearLayout>

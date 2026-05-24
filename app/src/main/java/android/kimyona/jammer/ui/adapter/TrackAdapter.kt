@@ -1,5 +1,6 @@
 package android.kimyona.jammer.ui.adapter
 
+import android.graphics.Color
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -10,13 +11,16 @@ import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import android.kimyona.jammer.R
 import android.kimyona.jammer.core.media.AlbumArtLoader
+import android.kimyona.jammer.data.entity.ContentRating
 import android.kimyona.jammer.data.entity.Track
 
 /**
- * Adapter de tracks com suporte a:
- * - Carregamento real de capas de álbum via AlbumArtLoader
- * - Multi-artist display (parse de artistsJoined)
- * - Click e long-click para context menu
+ * TrackAdapter — v2
+ *
+ * Changes vs v1:
+ *   - displayArtist uses Track.displayArtist (multi-artist aware, joins with " · ")
+ *   - Content rating badge shown when rating != NONE, colour-coded per rating
+ *   - Release type label shown when releaseType is set
  */
 class TrackAdapter(
     private val onClick: (Track) -> Unit,
@@ -48,13 +52,17 @@ class TrackAdapter(
         private val tvTitle: TextView = itemView.findViewById(R.id.tvItemTitle)
         private val tvArtist: TextView = itemView.findViewById(R.id.tvItemArtist)
         private val tvDuration: TextView = itemView.findViewById(R.id.tvItemDuration)
+        private val tvRatingBadge: TextView = itemView.findViewById(R.id.tvItemContentRating)
+        private val tvReleaseType: TextView = itemView.findViewById(R.id.tvItemReleaseType)
 
         fun bind(track: Track) {
             tvTitle.text = track.title
-            tvArtist.text = formatArtists(track)
+            tvArtist.text = track.displayArtist
             tvDuration.text = formatDuration(track.durationMs)
 
-            // Carrega capa real do arquivo de música
+            bindRatingBadge(track.contentRatingEnum)
+            bindReleaseType(track.releaseTypeEnum?.label)
+
             AlbumArtLoader.loadThumbnail(
                 itemView.context,
                 track.path,
@@ -69,11 +77,33 @@ class TrackAdapter(
             }
         }
 
-        private fun formatArtists(track: Track): String {
-            // Prioriza artistsJoined (multi-artist) sobre artist simples
-            return track.artistsJoined?.replace(";", ", ") 
-                ?: track.artist 
-                ?: "Unknown Artist"
+        private fun bindRatingBadge(rating: ContentRating) {
+            if (rating == ContentRating.NONE) {
+                tvRatingBadge.visibility = View.GONE
+                return
+            }
+            tvRatingBadge.text = rating.badge
+            tvRatingBadge.visibility = View.VISIBLE
+            // Colour-code each rating so they are visually distinct at a glance.
+            tvRatingBadge.setBackgroundColor(ratingColor(rating))
+        }
+
+        private fun bindReleaseType(label: String?) {
+            if (label.isNullOrBlank()) {
+                tvReleaseType.visibility = View.GONE
+            } else {
+                tvReleaseType.text = label
+                tvReleaseType.visibility = View.VISIBLE
+            }
+        }
+
+        private fun ratingColor(rating: ContentRating): Int = when (rating) {
+            ContentRating.EXPLICIT  -> Color.parseColor("#CC2222")  // red
+            ContentRating.VULGAR    -> Color.parseColor("#BB4400")  // dark orange
+            ContentRating.SLURRY    -> Color.parseColor("#997700")  // amber
+            ContentRating.LEWD      -> Color.parseColor("#883399")  // purple
+            ContentRating.SENSITIVE -> Color.parseColor("#446699")  // steel blue
+            ContentRating.NONE      -> Color.TRANSPARENT
         }
 
         private fun formatDuration(ms: Long): String {
