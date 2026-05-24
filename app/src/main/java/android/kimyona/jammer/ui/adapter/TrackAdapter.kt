@@ -13,6 +13,9 @@ import android.kimyona.jammer.R
 import android.kimyona.jammer.core.media.AlbumArtLoader
 import android.kimyona.jammer.data.entity.ContentRating
 import android.kimyona.jammer.data.entity.Track
+import android.kimyona.jammer.data.entity.contentRatingEnum
+import android.kimyona.jammer.data.entity.releaseTypeEnum
+import android.kimyona.jammer.data.entity.displayArtist
 
 /**
  * TrackAdapter — v2
