@@ -21,4 +21,9 @@
         android:title="Adicionar a playlist"
         android:orderInCategory="4" />
 
+    <item
+        android:id="@+id/action_edit_metadata"
+        android:title="Editar metadados"
+        android:orderInCategory="5" />
+
 </menu>

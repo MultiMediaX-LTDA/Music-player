@@ -32,11 +32,10 @@ class MediaRepository(private val context: Context) {
     suspend fun scanLibrary(): Flow<ScanProgress> = flow {
         emit(ScanProgress.Running(0, 1))
         try {
-            val scanned = scanner.scanAll { current, total ->
-                emit(ScanProgress.Running(current, total))
-            }
+            val scanned = scanner.scanAll()
 
-            val entities = scanned.map { scannedTrack ->
+            val entities = scanned.mapIndexed { index, scannedTrack ->
+                emit(ScanProgress.Running(index + 1, scanned.size))
                 Track(
                     path = scannedTrack.path,
                     title = scannedTrack.title,
@@ -62,16 +61,17 @@ class MediaRepository(private val context: Context) {
     suspend fun scanSAF(uri: Uri): Flow<ScanProgress> = flow {
         emit(ScanProgress.Running(0, 1))
         try {
-            // SAF scan: usa o scanner com path do documento
-            val treePath = getSAFPath(uri) ?: return@flow emit(ScanProgress.Error("Invalid SAF uri"))
-            val scanned = scanner.scanAll { current, total ->
-                emit(ScanProgress.Running(current, total))
+            val treePath = getSAFPath(uri) ?: run {
+                emit(ScanProgress.Error("Invalid SAF uri"))
+                return@flow
             }
-            // Filtra só os que estão dentro da pasta SAF
+
+            val scanned = scanner.scanAll()
             val prefix = treePath
             val filtered = scanned.filter { it.path.startsWith(prefix) }
 
-            val entities = filtered.map { scannedTrack ->
+            val entities = filtered.mapIndexed { index, scannedTrack ->
+                emit(ScanProgress.Running(index + 1, filtered.size))
                 Track(
                     path = scannedTrack.path,
                     title = scannedTrack.title,
@@ -95,7 +95,6 @@ class MediaRepository(private val context: Context) {
     }.flowOn(Dispatchers.IO)
 
     private fun getSAFPath(uri: Uri): String? {
-        // Heurística: tenta extrair path de document URI
         val docId = android.provider.DocumentsContract.getTreeDocumentId(uri)
         return if (docId.startsWith("primary:")) {
             "/storage/emulated/0/${docId.removePrefix("primary:")}"

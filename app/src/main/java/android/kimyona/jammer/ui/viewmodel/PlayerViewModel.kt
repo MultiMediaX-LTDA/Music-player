@@ -56,6 +56,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     private val _queueTracks = MutableLiveData<List<Track>>(emptyList())
     val queueTracks: LiveData<List<Track>> = _queueTracks
+/** Tamanho atual da fila — exposto como LiveData para a UI observar. */
+    val queueSize: LiveData<Int> = androidx.lifecycle.Transformations.map(_queueTracks) { it.size }
 
     private val _showMiniPlayer = MutableLiveData(false)
     val showMiniPlayer: LiveData<Boolean> = _showMiniPlayer
@@ -417,6 +419,24 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     // ─── Enums ──────────────────────────────────────────────────────────────
+// ─── Playlist playback ──────────────────────────────────────────────────
+
+    /**
+     * Toca uma lista de tracks a partir de um índice específico.
+     * Substitui a queue atual e inicia playback.
+     */
+    fun playPlaylist(tracks: List<Track>, startIndex: Int = 0) {
+        viewModelScope.launch {
+            try {
+                _queueTracks.value = tracks
+                if (tracks.isNotEmpty() && startIndex in tracks.indices) {
+                    playTrack(tracks[startIndex])
+                }
+            } catch (e: Exception) {
+                Log.e("PlayerVM", "playPlaylist error", e)
+            }
+        }
+    }
 
     enum class RepeatMode { NONE, ALL, ONE }
 }
