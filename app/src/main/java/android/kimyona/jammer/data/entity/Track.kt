@@ -5,13 +5,12 @@ import androidx.room.Ignore
 import androidx.room.PrimaryKey
 
 /**
- * Track — v2
+ * Track — v2 (KSP-safe)
  *
- * New fields vs v1:
- *   albumArtist   — for compilations and multi-artist albums
- *   alias         — romanized / alternate search name (e.g., "Utada Hikaru" → "宇多田ヒカル")
- *   contentRating — stored as ContentRating.name; use contentRatingEnum for the typed value
- *   releaseType   — stored as ReleaseType.name; null = unknown
+ * Mudança vs anterior: default values de contentRating e releaseType usam
+ * strings literais em vez de referenciar ContentRating/ReleaseType no construtor.
+ * Isso evita erro KSP "MissingType: references a type that is not present"
+ * quando o Room processa a entidade antes de resolver os enums.
  */
 @Entity(tableName = "tracks")
 data class Track(
@@ -42,12 +41,13 @@ data class Track(
      */
     val alias: String? = null,
     /**
-     * Content rating, stored as [ContentRating.name].
-     * Default NONE (clean/unrated).
+     * Content rating, stored as string name.
+     * Default "NONE" (clean/unrated).
+     * NÃO usar ContentRating.NONE.name aqui — causa erro KSP.
      */
-    val contentRating: String = ContentRating.NONE.name,
+    val contentRating: String = "NONE",
     /**
-     * Release type, stored as [ReleaseType.name].
+     * Release type, stored as string name.
      * null = not yet tagged.
      */
     val releaseType: String? = null
