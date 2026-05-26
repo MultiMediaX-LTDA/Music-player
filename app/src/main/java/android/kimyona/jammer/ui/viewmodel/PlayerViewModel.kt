@@ -10,6 +10,7 @@ import android.support.v4.media.MediaBrowserCompat
 import android.support.v4.media.session.MediaControllerCompat
 import android.support.v4.media.session.PlaybackStateCompat
 import android.util.Log
+import androidx.lifecycle.map
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
@@ -57,7 +58,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val _queueTracks = MutableLiveData<List<Track>>(emptyList())
     val queueTracks: LiveData<List<Track>> = _queueTracks
 /** Tamanho atual da fila — exposto como LiveData para a UI observar. */
-    val queueSize: LiveData<Int> = androidx.lifecycle.Transformations.map(_queueTracks) { it.size }
+    val queueSize: LiveData<Int> = _queueTracks.map { it.size }
 
     private val _showMiniPlayer = MutableLiveData(false)
     val showMiniPlayer: LiveData<Boolean> = _showMiniPlayer
