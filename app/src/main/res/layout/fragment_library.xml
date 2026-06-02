@@ -29,13 +29,17 @@
         android:id="@+id/chipGroupRating"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:visibility="gone" />
+        android:visibility="gone"
+        app:singleSelection="true"
+        app:selectionRequired="true" />
 
     <com.google.android.material.chip.ChipGroup
         android:id="@+id/chipGroupReleaseType"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:visibility="gone" />
+        android:visibility="gone"
+        app:singleSelection="true"
+        app:selectionRequired="true" />
 
     <TextView
         android:id="@+id/tvScanStatus"
@@ -63,12 +67,13 @@
         android:layout_weight="1"
         android:background="#FF0000" />
 
-    <Button
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/fabRescan"
-        android:layout_width="match_parent"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="RESCAN"
-        android:textColor="#FFFFFF"
-        android:background="#666666" />
+        android:layout_gravity="center"
+        android:layout_margin="16dp"
+        android:src="@drawable/ic_play"
+        app:backgroundTint="#666666" />
 
 </LinearLayout>
