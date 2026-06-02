@@ -161,7 +161,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun playTrack(track: Track) {
         try {
-            mediaController?.transportControls?.playFromMediaId(track.path, null)
+            // Envia Intent direto para o service em vez de playFromMediaId
+            val intent = android.content.Intent(getApplication(), JammerPlaybackService::class.java).apply {
+                action = JammerPlaybackService.ACTION_PLAY_SINGLE
+                putExtra("path", track.path)
+            }
+            getApplication<android.app.Application>().startService(intent)
+
             _currentTrack.value = track
             _showMiniPlayer.value = true
         } catch (e: Exception) {
