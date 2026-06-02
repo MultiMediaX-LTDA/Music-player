@@ -20,12 +20,12 @@ class MediaRepository(private val context: Context) {
     private val db = JammerDatabase.getDatabase(context)
     private val scanner = MediaScanner(context)
 
-    val allTracks: LiveData<List<<Track>> = db.trackDao().getAll()
-    val favorites: LiveData<List<<Track>> = db.trackDao().getFavorites()
+    val allTracks: LiveData<List<Track>> = db.trackDao().getAll()
+    val favorites: LiveData<List<Track>> = db.trackDao().getFavorites()
 
-    // ─── Scan ───────────────────────────────────────────────────────────────
+    // v─── Scan ───v
 
-    suspend fun scanLibrary(): Flow<<ScanProgress> = flow {
+    suspend fun scanLibrary(): Flow<ScanProgress> = flow {
         emit(ScanProgress.Running(0, 1))
         try {
             val scanned = scanner.scanAll()
@@ -54,7 +54,7 @@ class MediaRepository(private val context: Context) {
         }
     }.flowOn(Dispatchers.IO)
 
-    suspend fun scanSAF(uri: Uri): Flow<<ScanProgress> = flow {
+    suspend fun scanSAF(uri: Uri): Flow<ScanProgress> = flow {
         emit(ScanProgress.Running(0, 1))
         try {
             val scanned = scanner.scanSAF(uri)
@@ -83,24 +83,24 @@ class MediaRepository(private val context: Context) {
         }
     }.flowOn(Dispatchers.IO)
 
-    // ─── Queries ──────────────────────────────────────────────────────────
+    // v─── Queries ───v
 
-    fun searchTracks(query: String): LiveData<List<<Track>> =
+    fun searchTracks(query: String): LiveData<List<Track>> =
         db.trackDao().search("%$query%")
 
-    fun getByContentRating(rating: ContentRating): LiveData<List<<Track>> =
+    fun getByContentRating(rating: ContentRating): LiveData<List<Track>> =
         db.trackDao().getByContentRating(rating.name)
 
-    fun getByReleaseType(type: ReleaseType): LiveData<List<<Track>> =
+    fun getByReleaseType(type: ReleaseType): LiveData<List<Track>> =
         db.trackDao().getByReleaseType(type.name)
 
-    fun searchByContentRating(query: String, rating: ContentRating): LiveData<List<<Track>> =
+    fun searchByContentRating(query: String, rating: ContentRating): LiveData<List<Track>> =
         db.trackDao().searchByContentRating("%$query%", rating.name)
 
-    fun searchByReleaseType(query: String, type: ReleaseType): LiveData<List<<Track>> =
+    fun searchByReleaseType(query: String, type: ReleaseType): LiveData<List<Track>> =
         db.trackDao().searchByReleaseType("%$query%", type.name)
 
-    // ─── Metadata writers ─────────────────────────────────────────────────
+    // v─── Metadata writers ───v
 
     suspend fun setAlias(path: String, alias: String?) =
         db.trackDao().setAlias(path, alias)
@@ -120,7 +120,7 @@ class MediaRepository(private val context: Context) {
     suspend fun getTrackByPath(path: String): Track? =
         db.trackDao().getByPath(path)
 
-    // ─── Sealed class para progresso de scan ────────────────────────────────
+    // ─── Sealed class para progresso de scan ───
 
     sealed class ScanProgress {
         data class Running(val current: Int, val total: Int) : ScanProgress()
