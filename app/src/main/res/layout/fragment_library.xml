@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<<LinearLayout
+<LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
@@ -25,7 +25,6 @@
         android:queryHint="Search..."
         android:background="#333333" />
 
-    <!-- INVISÍVEL — só para o código não quebrar -->
     <com.google.android.material.chip.ChipGroup
         android:id="@+id/chipGroupRating"
         android:layout_width="wrap_content"
