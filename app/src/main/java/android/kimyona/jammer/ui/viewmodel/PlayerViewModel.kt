@@ -4,8 +4,6 @@ import android.app.Application
 import android.content.ComponentName
 import android.content.Context
 import android.net.Uri
-import android.os.Handler
-import android.os.Looper
 import android.support.v4.media.MediaBrowserCompat
 import android.support.v4.media.session.MediaControllerCompat
 import android.support.v4.media.session.PlaybackStateCompat
@@ -31,7 +29,6 @@ import android.kimyona.jammer.service.JammerPlaybackService
 class PlayerViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = MediaRepository(application)
-    private val handler = Handler(Looper.getMainLooper())
 
     // ─── MediaBrowser / Controller ──────────────────────────────────────────
     private var mediaBrowser: MediaBrowserCompat? = null
@@ -70,21 +67,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private var isScanning = false
 
     // ─── Position updater ───────────────────────────────────────────────────
-    private val positionRunnable = object : Runnable {
-        override fun run() {
-            try {
-                val pos = mediaController?.playbackState?.position ?: 0L
-                _currentPosition.postValue(pos)
-            } catch (e: Exception) {
-                Log.e("PlayerVM", "Position update error", e)
-            }
-            handler.postDelayed(this, 1000)
-        }
-    }
 
     init {
         connectMediaBrowser()
-        startPositionUpdates()
     }
 
     // ─── MediaBrowser connection ────────────────────────────────────────────
@@ -124,10 +109,17 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private val controllerCallback = object : MediaControllerCompat.Callback() {
-        override fun onPlaybackStateChanged(state: PlaybackStateCompat?) {
-            _isPlaying.postValue(state?.state == PlaybackStateCompat.STATE_PLAYING)
-            state?.position?.let { _currentPosition.postValue(it) }
-        }
+override fun onPlaybackStateChanged(state: PlaybackStateCompat?) {
+    _isPlaying.postValue(state?.state == PlaybackStateCompat.STATE_PLAYING)
+    state?.position?.let { _currentPosition.postValue(it) }
+    
+    // Inicia/para updates baseado no estado
+    if (state?.state == PlaybackStateCompat.STATE_PLAYING) {
+        startPositionUpdates()
+    } else {
+        stopPositionUpdates()
+    }
+}
 
         override fun onMetadataChanged(metadata: android.support.v4.media.MediaMetadataCompat?) {
             metadata?.let { meta ->
@@ -406,24 +398,40 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         } catch (e: Exception) { 0L }
     }
 
-    private fun startPositionUpdates() {
-        handler.postDelayed(positionRunnable, 1000)
-    }
+private var positionJob: kotlinx.coroutines.Job? = null
 
-    private fun stopPositionUpdates() {
-        handler.removeCallbacks(positionRunnable)
+private fun startPositionUpdates() {
+    positionJob?.cancel()
+    positionJob = viewModelScope.launch {
+        while (isActive) {
+            try {
+                val pos = mediaController?.playbackState?.position ?: 0L
+                _currentPosition.postValue(pos)
+            } catch (e: Exception) {
+                Log.e("PlayerVM", "Position update error", e)
+            }
+            delay(1000)
+        }
     }
+}
 
-    override fun onCleared() {
-        super.onCleared()
-        stopPositionUpdates()
-        try {
-            mediaController?.unregisterCallback(controllerCallback)
-        } catch (_: Exception) {}
-        try {
-            mediaBrowser?.disconnect()
-        } catch (_: Exception) {}
-    }
+private fun stopPositionUpdates() {
+    positionJob?.cancel()
+    positionJob = null
+}
+
+override fun onCleared() {
+    stopPositionUpdates()
+    try {
+        mediaController?.unregisterCallback(controllerCallback)
+    } catch (_: Exception) {}
+    mediaController = null
+    try {
+        mediaBrowser?.disconnect()
+    } catch (_: Exception) {}
+    mediaBrowser = null
+    super.onCleared()
+}
 
     // ─── Enums ──────────────────────────────────────────────────────────────
 // ─── Playlist playback ──────────────────────────────────────────────────

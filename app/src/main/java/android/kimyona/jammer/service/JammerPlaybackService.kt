@@ -32,6 +32,7 @@ import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.MediaItem
 import com.google.android.exoplayer2.Player
 import com.google.android.exoplayer2.ext.mediasession.MediaSessionConnector
+import android.kimyona.jammer.util.WeakRefRunnable
 import android.kimyona.jammer.R
 import android.kimyona.jammer.core.media.AlbumArtLoader
 import android.kimyona.jammer.ui.MainActivity
@@ -52,9 +53,8 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
     private var mediaSessionConnector: MediaSessionConnector? = null
 
     private val positionHandler = Handler(Looper.getMainLooper())
-    private var positionRunnable: Runnable? = null
+    private var positionRunnable: WeakRefRunnable<JammerPlaybackService>? = null
     private val seekHandler = Handler(Looper.getMainLooper())
-    private var seekRunnable: Runnable? = null
     
 
     private val serviceJob = SupervisorJob()
@@ -73,6 +73,7 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
     private var hasAudioFocus = false
 
     private var noisyReceiver: BroadcastReceiver? = null
+private var playerListener: Player.Listener? = null
 
     companion object {
         const val ACTION_PLAY_SINGLE = "android.kimyona.jammer.PLAY_SINGLE"
@@ -161,37 +162,38 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
 
     private fun initializePlayer() {
         try {
-            player = ExoPlayer.Builder(this).build().apply {
-                addListener(object : Player.Listener {
-                    override fun onPlaybackStateChanged(state: Int) {
-                        try {
-                            if (state == Player.STATE_ENDED) {
-                                onTrackEnded()
-                            }
-                            updatePlaybackState(isPlaying)
-                        } catch (e: Exception) {
-                            Log.e(TAG, "onPlaybackStateChanged error", e)
-                        }
-                    }
-override fun onIsPlayingChanged(isPlaying: Boolean) {
-    try {
-        updatePlaybackState(isPlaying)
-        if (isPlaying) {
-            startPositionUpdates()
-        } else {
-            stopPositionUpdates()
+playerListener = object : Player.Listener {
+    override fun onPlaybackStateChanged(state: Int) {
+        try {
+            if (state == Player.STATE_ENDED) {
+                onTrackEnded()
+            }
+            updatePlaybackState(isPlaying)
+        } catch (e: Exception) {
+            Log.e(TAG, "onPlaybackStateChanged error", e)
         }
-        updateNotification()
-    } catch (e: Exception) {
-        Log.e(TAG, "onIsPlayingChanged error", e)
+    }
+    override fun onIsPlayingChanged(isPlaying: Boolean) {
+        try {
+            updatePlaybackState(isPlaying)
+            if (isPlaying) {
+                startPositionUpdates()
+            } else {
+                stopPositionUpdates()
+            }
+            updateNotification()
+        } catch (e: Exception) {
+            Log.e(TAG, "onIsPlayingChanged error", e)
+        }
+    }
+    override fun onPlayerError(error: com.google.android.exoplayer2.PlaybackException) {
+        Log.e(TAG, "Player error: ${error.errorCodeName} - ${error.message}")
+        skipToNext()
     }
 }
-                    override fun onPlayerError(error: com.google.android.exoplayer2.PlaybackException) {
-                        Log.e(TAG, "Player error: ${error.errorCodeName} - ${error.message}")
-                        skipToNext()
-                    }
-                })
-            }
+player = ExoPlayer.Builder(this).build().apply {
+    addListener(playerListener!!)
+}       
             Log.d(TAG, "ExoPlayer initialized")
         } catch (e: Exception) {
             Log.e(TAG, "initializePlayer failed: ${e.message}", e)
@@ -484,26 +486,27 @@ override fun onIsPlayingChanged(isPlaying: Boolean) {
         }
     }
     
-        private fun debouncedSeekTo(positionMs: Long) {
-        try {
-            // Cancela seek anterior se existir
-            seekRunnable?.let { seekHandler.removeCallbacks(it) }
-            
-            // Cria novo seek com delay de 300ms
-            seekRunnable = Runnable {
+private var seekRunnable: WeakRefRunnable<JammerPlaybackService>? = null
+
+private fun debouncedSeekTo(positionMs: Long) {
+    try {
+        seekRunnable?.let { seekHandler.removeCallbacks(it) }
+        seekRunnable = object : WeakRefRunnable<JammerPlaybackService>(this) {
+            override fun runWithRef(service: JammerPlaybackService) {
                 try {
-                    player?.seekTo(positionMs)
-                    updatePlaybackState(player?.isPlaying ?: false)
-                    updateNotification()
+                    service.player?.seekTo(positionMs)
+                    service.updatePlaybackState(service.player?.isPlaying ?: false)
+                    service.updateNotification()
                 } catch (e: Exception) {
                     Log.e(TAG, "debouncedSeekTo error: ${e.message}")
                 }
             }
-            seekHandler.postDelayed(seekRunnable!!, 300)
-        } catch (e: Exception) {
-            Log.e(TAG, "debouncedSeekTo setup error: ${e.message}")
         }
+        seekHandler.postDelayed(seekRunnable!!, 300)
+    } catch (e: Exception) {
+        Log.e(TAG, "debouncedSeekTo setup error: ${e.message}")
     }
+}
 
     fun stopPlayback() {
         try {
@@ -788,7 +791,7 @@ override fun onIsPlayingChanged(isPlaying: Boolean) {
             val albumArt = try {
                 withContext(Dispatchers.IO) {
                     getCurrentTrackPath()?.let { path ->
-                        AlbumArtLoader.loadForNotification(this@JammerPlaybackService, path)
+                        AlbumArtLoader.loadForNotification(applicationContext, path)
                     }
                 }
             } catch (e: Exception) {
@@ -834,38 +837,38 @@ override fun onIsPlayingChanged(isPlaying: Boolean) {
         )
     }
 
-    private fun startPositionUpdates() {
-        try {
-            stopPositionUpdates() // Cancela anterior se existir
-            positionRunnable = object : Runnable {
-                override fun run() {
-                    try {
-                        player?.let {
-                            updatePlaybackState(it.isPlaying)
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Position update error: ${e.message}")
+private fun startPositionUpdates() {
+    try {
+        stopPositionUpdates()
+        positionRunnable = object : WeakRefRunnable<JammerPlaybackService>(this) {
+            override fun runWithRef(service: JammerPlaybackService) {
+                try {
+                    service.player?.let {
+                        service.updatePlaybackState(it.isPlaying)
                     }
-                    // Só continua se estiver tocando
-                    if (player?.isPlaying == true) {
-                        positionHandler.postDelayed(this, 1000)
-                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Position update error: ${e.message}")
+                }
+                // Só agenda próximo se ainda estiver tocando
+                if (service.player?.isPlaying == true) {
+                    service.positionHandler.postDelayed(this, 1000)
                 }
             }
-            positionHandler.postDelayed(positionRunnable!!, 1000)
-        } catch (e: Exception) {
-            Log.e(TAG, "startPositionUpdates error: ${e.message}")
         }
+        positionHandler.postDelayed(positionRunnable!!, 1000)
+    } catch (e: Exception) {
+        Log.e(TAG, "startPositionUpdates error: ${e.message}")
     }
+}
 
-    private fun stopPositionUpdates() {
-        try {
-            positionRunnable?.let { positionHandler.removeCallbacks(it) }
-            positionRunnable = null
-        } catch (e: Exception) {
-            Log.e(TAG, "stopPositionUpdates error: ${e.message}")
-        }
+private fun stopPositionUpdates() {
+    try {
+        positionRunnable?.let { positionHandler.removeCallbacks(it) }
+        positionRunnable = null
+    } catch (e: Exception) {
+        Log.e(TAG, "stopPositionUpdates error: ${e.message}")
     }
+}
 
     // ==================== MEDIA BROWSER ====================
 
@@ -885,7 +888,6 @@ override fun onIsPlayingChanged(isPlaying: Boolean) {
     }
 
         override fun onDestroy() {
-        super.onDestroy()
         serviceJob.cancel()
         try {
             positionRunnable?.let { positionHandler.removeCallbacks(it) }
@@ -896,15 +898,27 @@ override fun onIsPlayingChanged(isPlaying: Boolean) {
             Log.e(TAG, "onDestroy cleanup error: ${e.message}")
         }
         try {
+    mediaSessionConnector?.setPlayer(null)
+} catch (e: Exception) {
+    Log.e(TAG, "MediaSessionConnector cleanup error: ${e.message}")
+}
+        try {
             mediaSession?.release()
         } catch (e: Exception) {
             Log.e(TAG, "MediaSession release error: ${e.message}")
         }
+        try {
+    playerListener?.let { player?.removeListener(it) }
+    playerListener = null
+} catch (e: Exception) {
+    Log.e(TAG, "PlayerListener cleanup error: ${e.message}")
+}
         try {
             player?.release()
         } catch (e: Exception) {
             Log.e(TAG, "Player release error: ${e.message}")
         }
         Log.d(TAG, "Service destroyed")
+        super.onDestroy()
     }
 }

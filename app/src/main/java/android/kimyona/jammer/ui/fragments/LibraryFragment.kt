@@ -290,7 +290,7 @@ class LibraryFragment : Fragment() {
     }
 
     private fun showAddToPlaylistDialog(track: Track) {
-        CoroutineScope(Dispatchers.IO).launch {
+        viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
             val playlists = JammerDatabase.getDatabase(requireContext())
                 .playlistDao().getAll().value ?: emptyList()
 
@@ -309,7 +309,7 @@ class LibraryFragment : Fragment() {
                     .setTitle("Add to playlist")
                     .setItems(names) { _, which ->
                         val playlist = playlists[which]
-                        CoroutineScope(Dispatchers.IO).launch {
+                        viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
                             val crossRef = PlaylistTrackCrossRef(
                                 playlistId = playlist.id,
                                 trackPath = track.path,
