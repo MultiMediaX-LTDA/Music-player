@@ -15,21 +15,17 @@ import android.kimyona.jammer.data.entity.ReleaseType
 import android.kimyona.jammer.data.entity.Track
 import android.kimyona.jammer.core.media.MediaScanner
 
-/**
- * MediaRepository — classe completa.
- * Responsável por escanear mídia, persistir no Room, e expor queries.
- */
 class MediaRepository(private val context: Context) {
 
     private val db = JammerDatabase.getDatabase(context)
     private val scanner = MediaScanner(context)
 
-    val allTracks: LiveData<List<Track>> = db.trackDao().getAll()
-    val favorites: LiveData<List<Track>> = db.trackDao().getFavorites()
+    val allTracks: LiveData<List<<Track>> = db.trackDao().getAll()
+    val favorites: LiveData<List<<Track>> = db.trackDao().getFavorites()
 
     // ─── Scan ───────────────────────────────────────────────────────────────
 
-    suspend fun scanLibrary(): Flow<ScanProgress> = flow {
+    suspend fun scanLibrary(): Flow<<ScanProgress> = flow {
         emit(ScanProgress.Running(0, 1))
         try {
             val scanned = scanner.scanAll()
@@ -58,20 +54,13 @@ class MediaRepository(private val context: Context) {
         }
     }.flowOn(Dispatchers.IO)
 
-    suspend fun scanSAF(uri: Uri): Flow<ScanProgress> = flow {
+    suspend fun scanSAF(uri: Uri): Flow<<ScanProgress> = flow {
         emit(ScanProgress.Running(0, 1))
         try {
-            val treePath = getSAFPath(uri) ?: run {
-                emit(ScanProgress.Error("Invalid SAF uri"))
-                return@flow
-            }
+            val scanned = scanner.scanSAF(uri)
 
-            val scanned = scanner.scanAll()
-            val prefix = treePath
-            val filtered = scanned.filter { it.path.startsWith(prefix) }
-
-            val entities = filtered.mapIndexed { index, scannedTrack ->
-                emit(ScanProgress.Running(index + 1, filtered.size))
+            val entities = scanned.mapIndexed { index, scannedTrack ->
+                emit(ScanProgress.Running(index + 1, scanned.size))
                 Track(
                     path = scannedTrack.path,
                     title = scannedTrack.title,
@@ -94,28 +83,21 @@ class MediaRepository(private val context: Context) {
         }
     }.flowOn(Dispatchers.IO)
 
-    private fun getSAFPath(uri: Uri): String? {
-        val docId = android.provider.DocumentsContract.getTreeDocumentId(uri)
-        return if (docId.startsWith("primary:")) {
-            "/storage/emulated/0/${docId.removePrefix("primary:")}"
-        } else null
-    }
-
     // ─── Queries ──────────────────────────────────────────────────────────
 
-    fun searchTracks(query: String): LiveData<List<Track>> =
+    fun searchTracks(query: String): LiveData<List<<Track>> =
         db.trackDao().search("%$query%")
 
-    fun getByContentRating(rating: ContentRating): LiveData<List<Track>> =
+    fun getByContentRating(rating: ContentRating): LiveData<List<<Track>> =
         db.trackDao().getByContentRating(rating.name)
 
-    fun getByReleaseType(type: ReleaseType): LiveData<List<Track>> =
+    fun getByReleaseType(type: ReleaseType): LiveData<List<<Track>> =
         db.trackDao().getByReleaseType(type.name)
 
-    fun searchByContentRating(query: String, rating: ContentRating): LiveData<List<Track>> =
+    fun searchByContentRating(query: String, rating: ContentRating): LiveData<List<<Track>> =
         db.trackDao().searchByContentRating("%$query%", rating.name)
 
-    fun searchByReleaseType(query: String, type: ReleaseType): LiveData<List<Track>> =
+    fun searchByReleaseType(query: String, type: ReleaseType): LiveData<List<<Track>> =
         db.trackDao().searchByReleaseType("%$query%", type.name)
 
     // ─── Metadata writers ─────────────────────────────────────────────────
