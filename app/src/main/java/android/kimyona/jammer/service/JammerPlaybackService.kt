@@ -41,18 +41,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/**
- * Jammer Playback Service - BULLETPROOF EDITION.
- *
- * Correções:
- * - Shuffle/Repeat logic corrigida (playbackOrder[] + currentPlaybackIndex)
- * - Audio focus + headphone disconnect handling
- * - Try/catch em TODO lifecycle + callbacks
- * - startForeground() garantido em onStartCommand dentro de 5s
- * - MediaItem.fromUri() com File URI ou content:// URI
- * - Position updates com exception handling
- * - Service auto-stop quando playlist vazia e não-playing
- */
 class JammerPlaybackService : MediaBrowserServiceCompat() {
 
     private val TAG = "JammerService"
@@ -65,6 +53,9 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
 
     private val positionHandler = Handler(Looper.getMainLooper())
     private var positionRunnable: Runnable? = null
+    private val seekHandler = Handler(Looper.getMainLooper())
+    private var seekRunnable: Runnable? = null
+    
 
     private val serviceJob = SupervisorJob()
     private val serviceScope = CoroutineScope(Dispatchers.Main + serviceJob)
@@ -136,7 +127,7 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
                 ACTION_SKIP_PREV -> skipToPrevious()
                 ACTION_SEEK -> {
                     val pos = intent.getLongExtra("position", 0)
-                    seekTo(pos)
+                    debouncedSeekTo(pos)
                 }
                 ACTION_ADD_TO_QUEUE -> {
                     val path = intent.getStringExtra("path")
@@ -490,6 +481,27 @@ override fun onIsPlayingChanged(isPlaying: Boolean) {
             player?.seekTo(positionMs)
         } catch (e: Exception) {
             Log.e(TAG, "seekTo error: ${e.message}")
+        }
+    }
+    
+        private fun debouncedSeekTo(positionMs: Long) {
+        try {
+            // Cancela seek anterior se existir
+            seekRunnable?.let { seekHandler.removeCallbacks(it) }
+            
+            // Cria novo seek com delay de 300ms
+            seekRunnable = Runnable {
+                try {
+                    player?.seekTo(positionMs)
+                    updatePlaybackState(player?.isPlaying ?: false)
+                    updateNotification()
+                } catch (e: Exception) {
+                    Log.e(TAG, "debouncedSeekTo error: ${e.message}")
+                }
+            }
+            seekHandler.postDelayed(seekRunnable!!, 300)
+        } catch (e: Exception) {
+            Log.e(TAG, "debouncedSeekTo setup error: ${e.message}")
         }
     }
 
@@ -872,11 +884,12 @@ override fun onIsPlayingChanged(isPlaying: Boolean) {
         result.sendResult(mutableListOf())
     }
 
-    override fun onDestroy() {
+        override fun onDestroy() {
         super.onDestroy()
         serviceJob.cancel()
         try {
             positionRunnable?.let { positionHandler.removeCallbacks(it) }
+            seekRunnable?.let { seekHandler.removeCallbacks(it) }
             abandonAudioFocus()
             noisyReceiver?.let { unregisterReceiver(it) }
         } catch (e: Exception) {
