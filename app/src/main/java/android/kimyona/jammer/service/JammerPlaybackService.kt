@@ -182,14 +182,19 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
                             Log.e(TAG, "onPlaybackStateChanged error", e)
                         }
                     }
-                    override fun onIsPlayingChanged(isPlayingNow: Boolean) {
-                        try {
-                            updatePlaybackState(isPlayingNow)
-                            updateNotification()
-                        } catch (e: Exception) {
-                            Log.e(TAG, "onIsPlayingChanged error", e)
-                        }
-                    }
+override fun onIsPlayingChanged(isPlaying: Boolean) {
+    try {
+        updatePlaybackState(isPlaying)
+        if (isPlaying) {
+            startPositionUpdates()
+        } else {
+            stopPositionUpdates()
+        }
+        updateNotification()
+    } catch (e: Exception) {
+        Log.e(TAG, "onIsPlayingChanged error", e)
+    }
+}
                     override fun onPlayerError(error: com.google.android.exoplayer2.PlaybackException) {
                         Log.e(TAG, "Player error: ${error.errorCodeName} - ${error.message}")
                         skipToNext()
@@ -681,7 +686,13 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
         }
     }
 
+    private var lastNotificationUpdate = 0L
+    
     private fun updateNotification() {
+        val now = System.currentTimeMillis()
+        if (now - lastNotificationUpdate < 2000) return // Rate limit: max 1x a cada 2s
+        lastNotificationUpdate = now
+        
         serviceScope.launch {
             try {
                 val notification = buildNotification()
@@ -813,6 +824,7 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
 
     private fun startPositionUpdates() {
         try {
+            stopPositionUpdates() // Cancela anterior se existir
             positionRunnable = object : Runnable {
                 override fun run() {
                     try {
@@ -822,12 +834,24 @@ class JammerPlaybackService : MediaBrowserServiceCompat() {
                     } catch (e: Exception) {
                         Log.e(TAG, "Position update error: ${e.message}")
                     }
-                    positionHandler.postDelayed(this, 1000)
+                    // Só continua se estiver tocando
+                    if (player?.isPlaying == true) {
+                        positionHandler.postDelayed(this, 1000)
+                    }
                 }
             }
             positionHandler.postDelayed(positionRunnable!!, 1000)
         } catch (e: Exception) {
             Log.e(TAG, "startPositionUpdates error: ${e.message}")
+        }
+    }
+
+    private fun stopPositionUpdates() {
+        try {
+            positionRunnable?.let { positionHandler.removeCallbacks(it) }
+            positionRunnable = null
+        } catch (e: Exception) {
+            Log.e(TAG, "stopPositionUpdates error: ${e.message}")
         }
     }
 
