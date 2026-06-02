@@ -168,7 +168,7 @@ playerListener = object : Player.Listener {
             if (state == Player.STATE_ENDED) {
                 onTrackEnded()
             }
-            updatePlaybackState(isPlaying)
+            updatePlaybackState(player?.isPlaying ?: false)
         } catch (e: Exception) {
             Log.e(TAG, "onPlaybackStateChanged error", e)
         }
