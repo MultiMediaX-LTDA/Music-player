@@ -2,7 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="android.kimyona.jammer">
 
-    <!-- Permissoes minimas -->
+    <!-- Permissions -->
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
@@ -19,7 +19,7 @@
         android:theme="@style/Theme.Material3.Dark.NoActionBar"
         android:requestLegacyExternalStorage="true">
 
-        <!-- Onboarding: tela inicial de boas-vindas -->
+        <!-- Onboarding: welcome screen -->
         <activity
             android:name=".ui.onboarding.OnboardingActivity"
             android:exported="true"
@@ -41,7 +41,7 @@
             android:name=".ui.PlayerActivity"
             android:exported="false" />
 
-        <!-- HTML Popup para tutoriais/FAQs -->
+        <!-- HTML Popup for tutorials/FAQs -->
         <activity
             android:name=".ui.popup.HtmlPopupActivity"
             android:exported="false"
@@ -54,25 +54,17 @@
             android:theme="@style/Theme.Material3.Dark.NoActionBar"
             android:parentActivityName=".ui.MainActivity" />
 
-        <!-- Playback Service em foreground -->
+        <!-- foreground Playback Service -->
         <service
             android:name=".service.JammerPlaybackService"
             android:enabled="true"
-            android:exported="false"
+            android:exported="true"
             android:foregroundServiceType="mediaPlayback">
             <intent-filter>
+                <action android:name="androidx.media3.session.MediaLibraryService"/>
                 <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>
         </service>
-
-        <!-- Receiver para controles de midia -->
-        <receiver
-            android:name="androidx.media.session.MediaButtonReceiver"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.intent.action.MEDIA_BUTTON" />
-            </intent-filter>
-        </receiver>
 
     </application>
 </manifest>

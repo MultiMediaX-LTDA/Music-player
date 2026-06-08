@@ -52,7 +52,11 @@ class MediaScanner(private val context: Context) {
         val extension: String,
         val isNative: Boolean,
         val needsFFmpeg: Boolean,
-        val isFromHiddenFolder: Boolean = false
+        val isFromHiddenFolder: Boolean = false,
+        val albumArtist: String? = null,
+        val genre: String? = null,
+        val year: Int? = null,
+        val trackNumber: Int? = null
     )
 
     suspend fun scanAll(onProgress: (Int, Int) -> Unit = { _, _ -> }): List<Track> = withContext(Dispatchers.IO) {
@@ -64,7 +68,26 @@ class MediaScanner(private val context: Context) {
 
         // 2. Scan manual via File — SÓ se tiver permissão total (Android 10- ou MANAGE_EXTERNAL_STORAGE)
         if (canScanFilesystem()) {
-            tracks.addAll(scanAllFolders(onProgress))
+            val rustBridge = RustBridge()
+            if (rustBridge.isLoaded) {
+                tracks.addAll(rustBridge.scanDirectories(arrayOf(getStorageRoot().absolutePath), arrayOf()).map { rustTrack ->
+                    Track(
+                        id = rustTrack.path.hashCode().toLong(),
+                        title = rustTrack.title ?: "Unknown Title",
+                        artist = rustTrack.artist ?: "Unknown Artist",
+                        album = rustTrack.album ?: "Unknown Album",
+                        path = rustTrack.path,
+                        duration = rustTrack.durationMs ?: 0L,
+                        extension = rustTrack.format?.lowercase() ?: rustTrack.path.substringAfterLast('.', "").lowercase(),
+                        isNative = true, // Assuming Rust handles native formats
+                        needsFFmpeg = false, // Assuming Rust handles decoding
+                        isFromHiddenFolder = false // Rust scanner should handle this
+                    )
+                })
+                Log.i(TAG, "Rust scanner found ${tracks.size} tracks")
+            } else {
+                tracks.addAll(scanAllFolders(onProgress))
+            }
         } else {
             Log.i(TAG, "Skipping filesystem scan — no MANAGE_EXTERNAL_STORAGE permission")
         }
