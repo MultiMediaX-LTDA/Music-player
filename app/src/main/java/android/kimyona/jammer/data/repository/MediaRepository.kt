@@ -30,6 +30,7 @@ class MediaRepository(private val context: Context) {
         try {
             val scanned = scanner.scanAll()
 
+            db.trackDao().clearAllTracks()
             val entities = scanned.mapIndexed { index, scannedTrack ->
                 emit(ScanProgress.Running(index + 1, scanned.size))
                 Track(
@@ -39,7 +40,11 @@ class MediaRepository(private val context: Context) {
                     album = scannedTrack.album,
                     durationMs = scannedTrack.duration,
                     format = scannedTrack.extension.uppercase(),
-                    dateAdded = System.currentTimeMillis()
+                    dateAdded = System.currentTimeMillis(),
+                    albumArtist = scannedTrack.albumArtist,
+                    genre = scannedTrack.genre,
+                    year = scannedTrack.year,
+                    trackNumber = scannedTrack.trackNumber
                 )
             }
 
@@ -59,6 +64,7 @@ class MediaRepository(private val context: Context) {
         try {
             val scanned = scanner.scanSAF(uri)
 
+            db.trackDao().clearAllTracks()
             val entities = scanned.mapIndexed { index, scannedTrack ->
                 emit(ScanProgress.Running(index + 1, scanned.size))
                 Track(
@@ -68,7 +74,11 @@ class MediaRepository(private val context: Context) {
                     album = scannedTrack.album,
                     durationMs = scannedTrack.duration,
                     format = scannedTrack.extension.uppercase(),
-                    dateAdded = System.currentTimeMillis()
+                    dateAdded = System.currentTimeMillis(),
+                    albumArtist = scannedTrack.albumArtist,
+                    genre = scannedTrack.genre,
+                    year = scannedTrack.year,
+                    trackNumber = scannedTrack.trackNumber
                 )
             }
 

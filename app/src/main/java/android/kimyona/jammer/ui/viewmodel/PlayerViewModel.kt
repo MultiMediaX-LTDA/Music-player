@@ -158,7 +158,7 @@ override fun onPlaybackStateChanged(state: PlaybackStateCompat?) {
             // Envia Intent direto para o service em vez de playFromMediaId
             val intent = android.content.Intent(getApplication(), JammerPlaybackService::class.java).apply {
                 action = JammerPlaybackService.ACTION_PLAY_SINGLE
-                putExtra("path", track.path)
+                putExtra(JammerPlaybackService.EXTRA_PATH, track.path)
             }
             getApplication<android.app.Application>().startService(intent)
 
@@ -202,7 +202,7 @@ override fun onPlaybackStateChanged(state: PlaybackStateCompat?) {
             _shuffleEnabled.value = newState
             // Notifica o service via custom action
             mediaController?.transportControls?.sendCustomAction(
-                "ACTION_SET_SHUFFLE",
+                JammerPlaybackService.ACTION_SET_SHUFFLE,
                 android.os.Bundle().apply { putBoolean("enabled", newState) }
             )
         } catch (e: Exception) {
@@ -220,7 +220,7 @@ override fun onPlaybackStateChanged(state: PlaybackStateCompat?) {
             }
             _repeatMode.value = next
             mediaController?.transportControls?.sendCustomAction(
-                "ACTION_SET_REPEAT",
+                JammerPlaybackService.ACTION_SET_REPEAT,
                 android.os.Bundle().apply { putInt("mode", next.ordinal) }
             )
         } catch (e: Exception) {
@@ -235,7 +235,7 @@ override fun onPlaybackStateChanged(state: PlaybackStateCompat?) {
             val current = _queueTracks.value ?: emptyList()
             _queueTracks.value = current + track
             mediaController?.transportControls?.sendCustomAction(
-                "ACTION_ADD_TO_QUEUE",
+                JammerPlaybackService.ACTION_ADD_TO_QUEUE,
                 android.os.Bundle().apply { putString("path", track.path) }
             )
         } catch (e: Exception) {
@@ -269,6 +269,10 @@ override fun onPlaybackStateChanged(state: PlaybackStateCompat?) {
 
     fun clearQueue() {
         _queueTracks.value = emptyList()
+        mediaController?.transportControls?.sendCustomAction(
+            JammerPlaybackService.ACTION_CLEAR_QUEUE,
+            null
+        )
     }
 
     // ─── Favorites ──────────────────────────────────────────────────────────

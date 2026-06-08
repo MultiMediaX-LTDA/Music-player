@@ -24,6 +24,7 @@ import android.kimyona.jammer.ui.fragments.QueueFragment
 import android.kimyona.jammer.ui.popup.HtmlPopupActivity
 import android.kimyona.jammer.ui.settings.SettingsActivity
 import android.kimyona.jammer.ui.viewmodel.PlayerViewModel
+import org.woheller69.freeDroidWarn.FreeDroidWarn
 
 /**
  * MainActivity evoluída — com Mini-Player persistente e integração completa.
@@ -45,6 +46,10 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+     // FREE ANDROID WARNING DND
+        FreeDroidWarn.showWarningOnUpgrade(this, BuildConfig.VERSION_CODE)
+        
         setContentView(R.layout.activity_main)
 
         viewModel = ViewModelProvider(this).get(PlayerViewModel::class.java)
@@ -93,7 +98,7 @@ class MainActivity : AppCompatActivity() {
         }.attach()
     }
 
-    // ==================== MINI PLAYER ====================
+    // ======== MINI PLAYER ==========
 
     private fun setupMiniPlayer() {
         miniPlayer = findViewById(R.id.miniPlayer)
@@ -146,7 +151,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ==================== MENU ====================
+    // =========== MENU =============
 
     override fun onCreateOptionsMenu(menu: Menu?): Boolean {
         menuInflater.inflate(R.menu.main_menu, menu)
@@ -165,7 +170,7 @@ class MainActivity : AppCompatActivity() {
             }
             R.id.menu_sync -> {
                 viewModel.scanLibrary()
-                Toast.makeText(this, "Sincronizando biblioteca...", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Syncing library...", Toast.LENGTH_SHORT).show()
                 true
             }
             R.id.menu_settings -> {
