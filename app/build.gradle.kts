@@ -57,6 +57,9 @@ dependencies {
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
     ksp("androidx.room:room-compiler:2.6.1")
+    // Warning for the stupid Android 2026 September update [DO NOT REMOVE]
+    implementation("com.github.woheller69:FreeDroidWarn:1.+")
+    
 
     
 
