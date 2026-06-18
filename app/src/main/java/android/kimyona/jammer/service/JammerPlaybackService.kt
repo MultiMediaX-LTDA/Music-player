@@ -78,10 +78,6 @@ override fun onCreate() {
             if (state == Player.STATE_ENDED) {
                 onTrackEnded()
             }
-            hasAudioFocus
-        } catch (e: Exception) {
-            Log.e(TAG, "requestAudioFocus error: ${e.message}")
-            false
         }
     })
 
